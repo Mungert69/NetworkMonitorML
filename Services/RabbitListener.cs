@@ -62,14 +62,16 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         {
             if (rabbitMQObj.ConnectChannel == null)
             {
-                result.Message += $" Error : RabbitListener Connect Channel is null for Exchange {rabbitMQObj.ExchangeName}";
+                result.Message += $" Error : RabbitListener Connect Channel not open for Exchange {rabbitMQObj.ExchangeName}";
                 result.Success = false;
                 _logger.LogCritical(result.Message);
                 return;
             }
+          rabbitMQObj.Consumer = new EventingBasicConsumer(rabbitMQObj.ConnectChannel);
+
             if (rabbitMQObj.Consumer == null)
             {
-                result.Message += $" Error : RabbitListener Consumer is null for Exchange {rabbitMQObj.ExchangeName}";
+                result.Message += $" Error : RabbitListener can't create Consumer for queue  {rabbitMQObj.QueueName}";
                 result.Success = false;
                 _logger.LogCritical(result.Message);
                 return;
