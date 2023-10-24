@@ -57,6 +57,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         {
             _rabbitMQObjs.ForEach(rabbitMQObj =>
         {
+            rabbitMQObj.Consumer = new EventingBasicConsumer(rabbitMQObj.ConnectChannel);
             switch (rabbitMQObj.FuncName)
             {
                 case "mlCheck":
@@ -82,7 +83,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         catch (Exception e)
         {
-            string message = " Error : failed to declate consumers. Error was : " + e.ToString() + " . ";
+            string message = " Error : failed to declare consumers. Error was : " + e.ToString() + " . ";
             result.Message += message;
             Console.WriteLine(result.Message);
             result.Success = false;
