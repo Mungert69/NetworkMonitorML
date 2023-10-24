@@ -19,7 +19,6 @@ namespace NetworkMonitor.ML
         public void Train(MonitorContext monitorContext)
         {
             
-
             // Fetch data from the database
             // Fetch and project data from the database
             var localPingInfos = monitorContext.PingInfos

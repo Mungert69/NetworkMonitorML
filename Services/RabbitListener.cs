@@ -14,6 +14,8 @@ using Microsoft.Extensions.Logging;
 using NetworkMonitor.Objects.Factory;
 using NetworkMonitor.Utils.Helpers;
 using NetworkMonitor.Objects.Repository;
+using System.Net;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace NetworkMonitor.ML.Services;
 
 public interface IRabbitListener
@@ -53,10 +55,25 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
     protected override ResultObj DeclareConsumers()
     {
         var result = new ResultObj();
+        result.Success = true;
         try
         {
             _rabbitMQObjs.ForEach(rabbitMQObj =>
         {
+            if (rabbitMQObj.ConnectChannel == null)
+            {
+                result.Message += $" Error : RabbitListener Connect Channel is null for Exchange {rabbitMQObj.ExchangeName}";
+                result.Success = false;
+                _logger.LogCritical(result.Message);
+                return;
+            }
+            if (rabbitMQObj.Consumer == null)
+            {
+                result.Message += $" Error : RabbitListener Consumer is null for Exchange {rabbitMQObj.ExchangeName}";
+                result.Success = false;
+                _logger.LogCritical(result.Message);
+                return;
+            }
             switch (rabbitMQObj.FuncName)
             {
                 case "mlCheck":
@@ -77,14 +94,12 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
 
             }
         });
-            result.Success = true;
-            result.Message += " Success : Declared all consumers ";
+            if (result.Success) result.Message += " Success : Declared all consumers ";
         }
         catch (Exception e)
         {
-            string message = " Error : failed to declate consumers. Error was : " + e.ToString() + " . ";
-            result.Message += message;
-            Console.WriteLine(result.Message);
+            result.Message += " Error : failed to declare consumers. Error was : " + e.ToString() + " . ";
+            _logger.LogCritical(result.Message);
             result.Success = false;
         }
         return result;

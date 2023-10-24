@@ -7,30 +7,29 @@
     <ContainerBaseImage>mcr.microsoft.com/dotnet/aspnet:7.0-jammy-amd64</ContainerBaseImage>
     <ContainerImageName>mungert/networkmonitorml</ContainerImageName>
     <ContainerImageTag>0.0.1</ContainerImageTag>
-      <StartupObject>NetworkMonitor.ML.Program</StartupObject>
-      <OutputType>Exe</OutputType>
+    <StartupObject>NetworkMonitor.ML.Program</StartupObject>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
 
-</PropertyGroup>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" Version="2.0.1" />
     <PackageReference Include="Microsoft.ML.TimeSeries" Version="2.0.1" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 
-   <ItemGroup>
-	  <None Update="appsettings.json">
-	    <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-	  </None>
-	 </ItemGroup>
-   
-
-   <ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\NetworkMonitor\NetworkMonitor.csproj" />
-   </ItemGroup>
+  </ItemGroup>
 
-   <ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\NetworkMonitorData\NetworkMonitorData.csproj" />
-   </ItemGroup>
+  </ItemGroup>
 
 </Project>
