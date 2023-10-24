@@ -14,6 +14,8 @@ using Microsoft.Extensions.Logging;
 using NetworkMonitor.Objects.Factory;
 using NetworkMonitor.Utils.Helpers;
 using NetworkMonitor.Objects.Repository;
+using System.Net;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace NetworkMonitor.ML.Services;
 
 public interface IRabbitListener
@@ -53,6 +55,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
     protected override ResultObj DeclareConsumers()
     {
         var result = new ResultObj();
+        result.Success = true;
         try
         {
             _rabbitMQObjs.ForEach(rabbitMQObj =>
@@ -78,14 +81,18 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
 
             }
         });
-            result.Success = true;
-            result.Message += " Success : Declared all consumers ";
+            if (result.Success) result.Message += " Success : Declared all consumers ";
         }
         catch (Exception e)
         {
+<<<<<<< HEAD
             string message = " Error : failed to declare consumers. Error was : " + e.ToString() + " . ";
             result.Message += message;
             Console.WriteLine(result.Message);
+=======
+            result.Message += " Error : failed to declare consumers. Error was : " + e.ToString() + " . ";
+            _logger.LogCritical(result.Message);
+>>>>>>> 9953e25d4091387c0cdf25fd8006eda0b7a9dd47
             result.Success = false;
         }
         return result;
