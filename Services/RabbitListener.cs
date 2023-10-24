@@ -100,8 +100,14 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         catch (Exception e)
         {
+<<<<<<< HEAD
+            string message = " Error : failed to declare consumers. Error was : " + e.ToString() + " . ";
+            result.Message += message;
+            Console.WriteLine(result.Message);
+=======
             result.Message += " Error : failed to declare consumers. Error was : " + e.ToString() + " . ";
             _logger.LogCritical(result.Message);
+>>>>>>> 9953e25d4091387c0cdf25fd8006eda0b7a9dd47
             result.Success = false;
         }
         return result;
