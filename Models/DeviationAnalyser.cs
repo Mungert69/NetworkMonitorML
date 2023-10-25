@@ -2,7 +2,7 @@ using Microsoft.ML;
 using System.Collections.Generic;
 using System;
 using System.Linq;
-namespace NetworkMonitor.ML;
+namespace NetworkMonitor.ML.Model;
 
 public class DeviationAnalyzer
 {

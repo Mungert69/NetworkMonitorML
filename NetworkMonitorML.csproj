@@ -6,7 +6,7 @@
     <PublishProfile>DefaultContainer</PublishProfile>
     <ContainerBaseImage>mcr.microsoft.com/dotnet/aspnet:7.0-jammy-amd64</ContainerBaseImage>
     <ContainerImageName>mungert/networkmonitorml</ContainerImageName>
-    <ContainerImageTag>0.0.1</ContainerImageTag>
+    <ContainerImageTag>0.0.2</ContainerImageTag>
     <StartupObject>NetworkMonitor.ML.Program</StartupObject>
     <OutputType>Exe</OutputType>
     <Nullable>enable</Nullable>
@@ -14,8 +14,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Keras.NET" Version="3.8.5" />
     <PackageReference Include="Microsoft.ML" Version="2.0.1" />
     <PackageReference Include="Microsoft.ML.TimeSeries" Version="2.0.1" />
+    <PackageReference Include="MKL.NET.linux-x64" Version="2022.0.1.117" />
+    <PackageReference Include="TensorFlow.NET" Version="0.110.4" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,12 +1,13 @@
 ﻿using Microsoft.ML;
-using Microsoft.ML.TimeSeries;
-using Microsoft.ML.Data;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using NetworkMonitor.Objects;
 using System.Threading.Tasks;
 using NetworkMonitor.Objects.ServiceMessage;
 using NetworkMonitor.Data;
+using NetworkMonitor.ML.Model;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace NetworkMonitor.ML.Services;
@@ -15,45 +16,99 @@ public interface IMonitorMLService
 {
     Task Init();
     Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj);
-    void Train();
-    void Predict();
+    List<LocalPingInfo> TrainForHost(int monitorPingInfoID);
+    bool PredictForHost(List<LocalPingInfo> newPingInfos);
 }
 
 
 public class MonitorMLService : IMonitorMLService
 {
+    private IMLModel _mlModel;
     private ILogger _logger;
     private IServiceScopeFactory _scopeFactory;
+
+    private DeviationAnalyzer _deviationAnalyzer = new DeviationAnalyzer(10, 1);
+
     public MonitorMLService(ILogger<MonitorMLService> logger, IServiceScopeFactory scopeFactory)
     {
-
         _logger = logger;
         _scopeFactory = scopeFactory;
-
     }
 
-    public async Task Init() { }
-
-    public void Train()
+    public async Task Init()
     {
-        var trainer = new Trainer("model.zip");
+        var localPingInfos = TrainForHost(191531);
+        Random rnd = new Random();
+        for (int i = 0; i < 50; i++) // Generating 100 test ping infos
+        {
+            localPingInfos.Add(new LocalPingInfo
+            {
+                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-i).Ticks, // Just an example, adjust as needed
+                RoundTripTime = (ushort)(rnd.NextDouble() * 10 + 100), // Random value between 1 and 3
+                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
+            });
+        }
+        for (int i = 50; i < 100; i++) // Generating 100 test ping infos
+        {
+            localPingInfos.Add(new LocalPingInfo
+            {
+                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-i).Ticks, // Just an example, adjust as needed
+                RoundTripTime = (ushort)(rnd.NextDouble() * 10 + 20), // Random value between 1 and 3
+                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
+            });
+        }
+        _logger.LogInformation($" Got prediction is data unusual {PredictForHost(localPingInfos)}");
+    }
+
+
+    public List<LocalPingInfo> TrainForHost(int monitorPingInfoID)
+    {
+        var localPingInfos = new List<LocalPingInfo>();
+        _mlModel = new ChangeDetectionModel(monitorPingInfoID);
         using (var scope = _scopeFactory.CreateScope())
         {
             MonitorContext monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            trainer.Train(monitorContext); _logger.LogDebug("MLSERVICE : Training PingInfo Data from database.");
-        }
+            localPingInfos = monitorContext.PingInfos
+                .Where(p => p.MonitorPingInfoID == monitorPingInfoID)
+                .ToList().Select(p => new LocalPingInfo
+                {
+                    DateSentInt = p.DateSentInt,
+                    RoundTripTime = p.RoundTripTime ?? 0,
+                    StatusID = p.StatusID
+                    // ... add other properties if needed ...
+                }).ToList();
 
+            if (localPingInfos.Count > 0)
+            {
+                _mlModel.Train(localPingInfos);
+                _logger.LogDebug($"MLSERVICE : Training PingInfo Data for host {monitorPingInfoID}.");
+            }
+        }
+        return localPingInfos;
     }
 
-    public void Predict()
+    public bool PredictForHost(List<LocalPingInfo> localPingInfos)
     {
-        // Make predictions
-        var predictor = new Predictor("path_to_saved_model.zip");
-        var sampleData = new LocalPingInfo { DateSentInt = 1234 }; // Replace with actual data
-        var predictedRoundTripTime = predictor.Predict(sampleData);
-        _logger.LogInformation($"Predicted Round Trip Time: {predictedRoundTripTime}");
+        bool anomalyDetected=false;
+        var predictions = _mlModel.PredictList(localPingInfos);
+        Console.WriteLine("Alert\tScore\tP-Value\tMartingale value");
+        foreach (var p in predictions)
+        {
+            if (p.Prediction is not null)
+            {
+                var results = $"{p.Prediction[0]}\t{p.Prediction[1]:f2}\t{p.Prediction[2]:F2}\t{p.Prediction[3]:F2}";
 
+                if (p.Prediction[0] == 1)
+                {
+                    results += " <-- alert is on, predicted changepoint";
+                    anomalyDetected=true;
+                }
+                Console.WriteLine(results);
+            }
+        }
+        Console.WriteLine("");
 
+        return anomalyDetected; 
     }
 
     public async Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj)
