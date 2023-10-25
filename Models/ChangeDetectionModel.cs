@@ -27,6 +27,27 @@ namespace NetworkMonitor.ML.Model
             _predictor = new Predictor(modelPath, _mlContext);
         }
 
+        public override void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
+        {
+
+            Console.WriteLine("Alert\tScore\tP-Value\tMartingale value");
+            foreach (var p in predictions)
+            {
+                if (p.Prediction is not null)
+                {
+                    var results = $"{p.Prediction[0]}\t{p.Prediction[1]:f2}\t{p.Prediction[2]:F2}\t{p.Prediction[3]:F2}";
+
+                    if (p.Prediction[0] == 1)
+                    {
+                        results += " <-- alert is on, predicted changepoint";
+                        //anomalyDetected=true;
+                    }
+                    Console.WriteLine(results);
+                }
+            }
+            Console.WriteLine("");
+
+        }
         public override void Train(List<LocalPingInfo> data)
         {
             _trainer.Train(data);
@@ -137,7 +158,7 @@ namespace NetworkMonitor.ML.Model
                 IDataView transformedData = iidChangePointTransform.Transform(dataView);
                 var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false);
 
-                
+
                 return predictions;
             }
 
@@ -153,29 +174,7 @@ namespace NetworkMonitor.ML.Model
             }
         }
 
-       
 
-        public class Display
-        {
-            public static void PrintPrediction(int idx, float value, AnomalyPrediction p)
-            {
-
-                if (p.Prediction is not null)
-                {
-                    var results = $"{idx}\t{value}\t\t{p.Prediction[0]}\t{p.Prediction[1]:f2}\t{p.Prediction[2]:F2}\t{p.Prediction[3]:F2}";
-
-                    if (p.Prediction[0] == 1)
-                    {
-                        results += " <-- alert is on, predicted changepoint";
-                    }
-                    Console.WriteLine(results);
-                }
-
-                Console.WriteLine("");
-            }
-
-
-        }
     }
 
 

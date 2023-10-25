@@ -37,7 +37,9 @@ public class MonitorMLService : IMonitorMLService
 
     public async Task Init()
     {
-        var localPingInfos = TrainForHost(191531);
+        var monitorPingInfoID=191531;
+        _mlModel = new ChangeDetectionModel(monitorPingInfoID);
+        var localPingInfos = TrainForHost(monitorPingInfoID);
         Random rnd = new Random();
         for (int i = 0; i < 50; i++) // Generating 100 test ping infos
         {
@@ -57,14 +59,43 @@ public class MonitorMLService : IMonitorMLService
                 StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
             });
         }
-        _logger.LogInformation($" Got prediction is data unusual {PredictForHost(localPingInfos)}");
+        _logger.LogInformation($" Running change detection got prediction is data unusual {PredictForHost(localPingInfos)}");
+           _mlModel = new SpikeDetectionModel(monitorPingInfoID);
+            localPingInfos = TrainForHost(monitorPingInfoID);
+        rnd = new Random();
+        for (int i = 0; i < 50; i++) // Generating 100 test ping infos
+        {
+            localPingInfos.Add(new LocalPingInfo
+            {
+                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-i).Ticks, // Just an example, adjust as needed
+                RoundTripTime = (ushort)(rnd.NextDouble() * 3 + 1), // Random value between 1 and 3
+                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
+            });
+        }
+         localPingInfos.Add(new LocalPingInfo
+            {
+                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-50).Ticks, // Just an example, adjust as needed
+                RoundTripTime = (ushort)(rnd.NextDouble() * 5 + 200), // Random value between 1 and 3
+                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
+            });
+        for (int i = 51; i < 100; i++) // Generating 100 test ping infos
+        {
+            localPingInfos.Add(new LocalPingInfo
+            {
+                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-i).Ticks, // Just an example, adjust as needed
+                RoundTripTime = (ushort)(rnd.NextDouble() * 3 + 1), // Random value between 1 and 3
+                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
+            });
+        }
+          _logger.LogInformation($" Running spike detection got prediction is data unusual {PredictForHost(localPingInfos)}");
+      
     }
 
 
     public List<LocalPingInfo> TrainForHost(int monitorPingInfoID)
     {
         var localPingInfos = new List<LocalPingInfo>();
-        _mlModel = new ChangeDetectionModel(monitorPingInfoID);
+
         using (var scope = _scopeFactory.CreateScope())
         {
             MonitorContext monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
@@ -89,26 +120,11 @@ public class MonitorMLService : IMonitorMLService
 
     public bool PredictForHost(List<LocalPingInfo> localPingInfos)
     {
-        bool anomalyDetected=false;
+
         var predictions = _mlModel.PredictList(localPingInfos);
-        Console.WriteLine("Alert\tScore\tP-Value\tMartingale value");
-        foreach (var p in predictions)
-        {
-            if (p.Prediction is not null)
-            {
-                var results = $"{p.Prediction[0]}\t{p.Prediction[1]:f2}\t{p.Prediction[2]:F2}\t{p.Prediction[3]:F2}";
+        _mlModel.PrintPrediction(predictions);
+        return predictions.Any(p => p.Prediction[0] == 1);
 
-                if (p.Prediction[0] == 1)
-                {
-                    results += " <-- alert is on, predicted changepoint";
-                    anomalyDetected=true;
-                }
-                Console.WriteLine(results);
-            }
-        }
-        Console.WriteLine("");
-
-        return anomalyDetected; 
     }
 
     public async Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj)

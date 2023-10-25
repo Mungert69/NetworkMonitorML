@@ -100,23 +100,5 @@ namespace NetworkMonitor.ML.Model
             }
         }
 
-        public class Display
-        {
-            public static void PrintPrediction(int idx, float value, AnomalyPrediction p)
-            {
-                if (p.Prediction is not null)
-                {
-                    var results = $"{idx}\t{value}\t\t{p.Prediction[0]}\t{p.Prediction[1]:f2}\t{p.Prediction[2]:F2}";
-
-                    if (p.Prediction[0] == 1)
-                    {
-                        results += " <-- alert is on, predicted spike";
-                    }
-                    Console.WriteLine(results);
-                }
-
-                Console.WriteLine("");
-            }
-        }
     }
 }
