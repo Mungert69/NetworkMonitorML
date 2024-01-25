@@ -9,6 +9,8 @@ using NetworkMonitor.Objects.ServiceMessage;
 using NetworkMonitor.Data;
 using NetworkMonitor.ML.Model;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+
 
 namespace NetworkMonitor.ML.Services;
 
@@ -37,58 +39,38 @@ public class MonitorMLService : IMonitorMLService
 
     public async Task Init()
     {
-        var monitorPingInfoID=191531;
-        _mlModel = new ChangeDetectionModel(monitorPingInfoID);
-        var localPingInfos = TrainForHost(monitorPingInfoID);
-        Random rnd = new Random();
-        for (int i = 0; i < 50; i++) // Generating 100 test ping infos
+
+        using (var scope = _scopeFactory.CreateScope())
         {
-            localPingInfos.Add(new LocalPingInfo
+            MonitorContext monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+            var monitorPingInfos = await monitorContext.MonitorPingInfos
+                                      .AsNoTracking()
+                                      .Include(e => e.PingInfos)
+                                      .Where(w => w.Enabled).Take(1)
+                                      .ToListAsync();
+
+            foreach (var monitorPingInfo in monitorPingInfos)
             {
-                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-i).Ticks, // Just an example, adjust as needed
-                RoundTripTime = (ushort)(rnd.NextDouble() * 10 + 100), // Random value between 1 and 3
-                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
-            });
+                var localPingInfos = monitorPingInfo.PingInfos.Select(pi => new LocalPingInfo
+                {
+                    DateSentInt = pi.DateSentInt,
+                    RoundTripTime = (ushort)(pi.RoundTripTime ?? 0),
+                    StatusID = pi.StatusID
+                }).ToList();
+
+                // Change Detection Model
+                _mlModel = new ChangeDetectionModel(monitorPingInfo.ID);
+                _mlModel.Train(localPingInfos);
+                bool isDataUnusualForChangeDetection = PredictForHost(localPingInfos);
+                _logger.LogInformation($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}, data unusual: {isDataUnusualForChangeDetection}");
+
+                // Spike Detection Model
+                _mlModel = new SpikeDetectionModel(monitorPingInfo.ID);
+                _mlModel.Train(localPingInfos);
+                bool isDataUnusualForSpikeDetection = PredictForHost(localPingInfos);
+                _logger.LogInformation($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}, data unusual: {isDataUnusualForSpikeDetection}");
+            }
         }
-        for (int i = 50; i < 100; i++) // Generating 100 test ping infos
-        {
-            localPingInfos.Add(new LocalPingInfo
-            {
-                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-i).Ticks, // Just an example, adjust as needed
-                RoundTripTime = (ushort)(rnd.NextDouble() * 10 + 20), // Random value between 1 and 3
-                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
-            });
-        }
-        _logger.LogInformation($" Running change detection got prediction is data unusual {PredictForHost(localPingInfos)}");
-           _mlModel = new SpikeDetectionModel(monitorPingInfoID);
-            localPingInfos = TrainForHost(monitorPingInfoID);
-        rnd = new Random();
-        for (int i = 0; i < 50; i++) // Generating 100 test ping infos
-        {
-            localPingInfos.Add(new LocalPingInfo
-            {
-                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-i).Ticks, // Just an example, adjust as needed
-                RoundTripTime = (ushort)(rnd.NextDouble() * 3 + 1), // Random value between 1 and 3
-                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
-            });
-        }
-         localPingInfos.Add(new LocalPingInfo
-            {
-                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-50).Ticks, // Just an example, adjust as needed
-                RoundTripTime = (ushort)(rnd.NextDouble() * 5 + 200), // Random value between 1 and 3
-                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
-            });
-        for (int i = 51; i < 100; i++) // Generating 100 test ping infos
-        {
-            localPingInfos.Add(new LocalPingInfo
-            {
-                DateSentInt = (uint)DateTime.UtcNow.AddMilliseconds(-i).Ticks, // Just an example, adjust as needed
-                RoundTripTime = (ushort)(rnd.NextDouble() * 3 + 1), // Random value between 1 and 3
-                StatusID = 1 // Assuming status ID is 1 for all, adjust as needed
-            });
-        }
-          _logger.LogInformation($" Running spike detection got prediction is data unusual {PredictForHost(localPingInfos)}");
-      
     }
 
 
