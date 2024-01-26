@@ -136,7 +136,7 @@ public class MonitorMLService : IMonitorMLService
 
             var localPingInfos = GetLocalPingInfos(monitorPingInfo);
 
-            _mlModel = new ChangeDetectionModel(monitorPingInfo.ID, 70d);
+            _mlModel = new ChangeDetectionModel(monitorPingInfo.ID, 90d);
             //_mlModel.Train(localPingInfos);
             detectionResult = PredictForHostChange(localPingInfos);
 
