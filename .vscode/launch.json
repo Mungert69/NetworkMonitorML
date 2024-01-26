@@ -6,7 +6,7 @@
             "type": "coreclr",
             "request": "launch",
             "preLaunchTask": "build",
-            "program": "${workspaceFolder}/bin/Debug/netcoreapp7.0/linux-x64/NetworkMonitorML.dll",
+            "program": "${workspaceFolder}/bin/Debug/netcoreapp8.0/linux-x64/NetworkMonitorML.dll",
             "args": ["dev"],
             "cwd": "${workspaceFolder}",
             "stopAtEntry": false,

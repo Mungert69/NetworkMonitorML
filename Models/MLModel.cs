@@ -7,10 +7,12 @@ namespace NetworkMonitor.ML.Model;
 public abstract class MLModel : IMLModel
 {
   private int _monitorPingInfoID;
+  private double _confidence=95d;
 
   public int MonitorPingInfoID { get => _monitorPingInfoID; }
+    public double Confidence { get => _confidence; set => _confidence = value; }
 
-  public MLModel(int monitorPingInfoID)
+    public MLModel(int monitorPingInfoID)
   {
     _monitorPingInfoID = monitorPingInfoID;
   }
@@ -20,7 +22,7 @@ public abstract class MLModel : IMLModel
   public abstract IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs);
   public virtual void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
   {
-
+    Console.WriteLine($"Confidence set at {Confidence}");
     Console.WriteLine("Alert\tScore\tP-Value");
     foreach (var p in predictions)
     {
@@ -30,7 +32,7 @@ public abstract class MLModel : IMLModel
 
         if (p.Prediction[0] == 1)
         {
-          results += " <-- alert is on, predicted changepoint";
+          results += " <-- alert is on, predicted spike";
           //anomalyDetected=true;
         }
         Console.WriteLine(results);

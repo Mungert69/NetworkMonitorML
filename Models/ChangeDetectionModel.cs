@@ -18,18 +18,22 @@ namespace NetworkMonitor.ML.Model
         private Trainer _trainer;
         private Predictor _predictor;
         private MLContext _mlContext;
+                private string _basePath = "data";
 
-        public ChangeDetectionModel(int monitorPingInfoID) : base(monitorPingInfoID)
+        public ChangeDetectionModel(int monitorPingInfoID, double confidence) : base(monitorPingInfoID)
         {
-            var modelPath = $"model_{monitorPingInfoID}.zip";
+            var modelPath = $"{_basePath}/model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();
-            _trainer = new Trainer(modelPath, _mlContext);
-            _predictor = new Predictor(modelPath, _mlContext);
+            // No need to train this ML model
+            _trainer = new Trainer(modelPath, _mlContext, confidence);
+            _predictor = new Predictor(modelPath, _mlContext, confidence);
+                        this.Confidence = confidence;
         }
 
         public override void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
         {
 
+            Console.WriteLine($"Confidence set at {Confidence}");
             Console.WriteLine("Alert\tScore\tP-Value\tMartingale value");
             foreach (var p in predictions)
             {
@@ -66,12 +70,14 @@ namespace NetworkMonitor.ML.Model
         {
             private readonly string _modelPath;
             private MLContext _mlContext;
+            private double _confidence;
             private TimeSeriesPredictionEngine<LocalPingInfo, AnomalyPrediction> _engine;
 
-            public Trainer(string modelPath, MLContext mLContext)
+            public Trainer(string modelPath, MLContext mLContext, double confidence)
             {
                 _modelPath = modelPath;
                 _mlContext = mLContext;
+                _confidence = confidence;
             }
 
             public TimeSeriesPredictionEngine<LocalPingInfo, AnomalyPrediction> Engine { get => _engine; set => _engine = value; }
@@ -84,30 +90,9 @@ namespace NetworkMonitor.ML.Model
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
 
 
-                /*var outputDataView = _mlContext.AnomalyDetection.DetectEntireAnomalyBySrCnn(dataView, outputColumnName, inputColumnName,
-                    threshold: 0.35, batchSize: 100, sensitivity: 90.0, detectMode: SrCnnDetectMode.AnomalyAndMargin);
-
-                // Getting the data of the newly created column as an IEnumerable of
-                // SrCnnAnomalyDetection.
-                var predictionColumn = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(
-                    outputDataView, reuseRowObject: false);
-
-
-                Console.WriteLine("Index\tData\tAnomaly\tAnomalyScore\tMag\tExpectedValue\tBoundaryUnit\tUpperBoundary\tLowerBoundary");
-
-                int k = 0;
-                foreach (var prediction in predictionColumn)
-                {
-                    Display.PrintPrediction(k, localPingInfos[k].RoundTripTime, prediction);
-                    k++;
-                }
-
-                ITransformer model = _mlContext.Transforms.DetectAnomalyBySrCnn(outputColumnName, inputColumnName,
-                               threshold: 0.35, averagingWindowSize : 10).Fit(
-                               dataView);*/
-                ITransformer model = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: 95d, changeHistoryLength: 50).Fit(
+                ITransformer model = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: _confidence, changeHistoryLength: 50).Fit(
                                                dataView); ;
-                // Create a time series prediction engine from the model.
+
                 Engine = model.CreateTimeSeriesEngine<LocalPingInfo,
                     AnomalyPrediction>(_mlContext);
 
@@ -121,11 +106,13 @@ namespace NetworkMonitor.ML.Model
         {
             private readonly string _modelPath;
             private MLContext _mlContext;
+                        private double _confidence;
 
-            public Predictor(string modelPath, MLContext mlContext)
+            public Predictor(string modelPath, MLContext mLContext, double confidence)
             {
-                _mlContext = mlContext;
                 _modelPath = modelPath;
+                _mlContext = mLContext;
+                _confidence = confidence;
             }
 
 
@@ -149,7 +136,7 @@ namespace NetworkMonitor.ML.Model
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
 
-                var iidChangePointEstimator = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: 90d, 20);
+                var iidChangePointEstimator = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: _confidence, 20);
 
                 var emptyDataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
                 var iidChangePointTransform = iidChangePointEstimator.Fit(emptyDataView);

@@ -14,13 +14,16 @@ namespace NetworkMonitor.ML.Model
         private Trainer _trainer;
         private Predictor _predictor;
         private MLContext _mlContext;
+        private string _basePath = "data";
 
-        public SpikeDetectionModel(int monitorPingInfoID) : base(monitorPingInfoID)
+        public SpikeDetectionModel(int monitorPingInfoID, double confidence) : base(monitorPingInfoID)
         {
-            var modelPath = $"spike_model_{monitorPingInfoID}.zip";
+            var modelPath = $"{_basePath}/spike_model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();
-            _trainer = new Trainer(modelPath, _mlContext);
-            _predictor = new Predictor(modelPath, _mlContext);
+                        // No need to train this ML model
+            _trainer = new Trainer(modelPath, _mlContext, confidence);
+            _predictor = new Predictor(modelPath, _mlContext, confidence);
+            this.Confidence = confidence;
         }
 
         public override void Train(List<LocalPingInfo> data)
@@ -42,11 +45,13 @@ namespace NetworkMonitor.ML.Model
         {
             private readonly string _modelPath;
             private MLContext _mlContext;
+            private double _confidence;
 
-            public Trainer(string modelPath, MLContext mLContext)
+            public Trainer(string modelPath, MLContext mLContext, double confidence)
             {
                 _modelPath = modelPath;
                 _mlContext = mLContext;
+                _confidence = confidence;
             }
 
             public void Train(List<LocalPingInfo> localPingInfos)
@@ -55,7 +60,7 @@ namespace NetworkMonitor.ML.Model
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
 
-                ITransformer model = _mlContext.Transforms.DetectIidSpike(outputColumnName, inputColumnName, confidence: 95, pvalueHistoryLength: 50).Fit(dataView);
+                ITransformer model = _mlContext.Transforms.DetectIidSpike(outputColumnName, inputColumnName, confidence: _confidence, pvalueHistoryLength: 50).Fit(dataView);
 
                 // Save the model to a file.
                 _mlContext.Model.Save(model, dataView.Schema, _modelPath);
@@ -67,10 +72,13 @@ namespace NetworkMonitor.ML.Model
             private readonly string _modelPath;
             private MLContext _mlContext;
 
-            public Predictor(string modelPath, MLContext mlContext)
+            private double _confidence;
+
+            public Predictor(string modelPath, MLContext mLContext, double confidence)
             {
-                _mlContext = mlContext;
                 _modelPath = modelPath;
+                _mlContext = mLContext;
+                _confidence = confidence;
             }
 
             public IEnumerable<AnomalyPrediction> GetDeviations(IEnumerable<LocalPingInfo> inputs)
@@ -78,7 +86,7 @@ namespace NetworkMonitor.ML.Model
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
 
-                var iidSpikeEstimator = _mlContext.Transforms.DetectIidSpike(outputColumnName, inputColumnName, confidence: 95, pvalueHistoryLength: 50);
+                var iidSpikeEstimator = _mlContext.Transforms.DetectIidSpike(outputColumnName, inputColumnName, confidence: _confidence, pvalueHistoryLength: 50);
 
                 var emptyDataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
                 var iidSpikeTransform = iidSpikeEstimator.Fit(emptyDataView);
