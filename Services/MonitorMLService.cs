@@ -25,6 +25,8 @@ public interface IMonitorMLService
     Task<DetectionResult> InitChangeDetection(int monitorIPID);
     Task<DetectionResult> InitSpikeDetection(int monitorIPID);
 
+     Task<ResultObj> CheckHost(int monitorIPID);
+
 
 }
 
@@ -47,12 +49,27 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task Init()
     {
-        int monitorIPID = 1;
+         int monitorIPID = 2;
         var changeDetectionResult = await InitChangeDetection(monitorIPID);
         var spikeDetectionResult = await InitSpikeDetection(monitorIPID);
 
         var combinedAnalysis = AnalyzeResults(changeDetectionResult, spikeDetectionResult);
         _logger.LogInformation($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
+  
+         }
+
+    public async Task<ResultObj> CheckHost(int monitorIPID) {
+        var result = new ResultObj();
+
+        var changeDetectionResult = await InitChangeDetection(monitorIPID);
+        var spikeDetectionResult = await InitSpikeDetection(monitorIPID);
+
+        var combinedAnalysis = AnalyzeResults(changeDetectionResult, spikeDetectionResult);
+        result.Success = changeDetectionResult.Result.Success && spikeDetectionResult.Result.Success;
+        result.Message = combinedAnalysis;
+        _logger.LogInformation($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
+        return result;
+  
     }
 
     private string AnalyzeResults(DetectionResult changeDetectionResult, DetectionResult spikeDetectionResult)
@@ -66,6 +83,13 @@ public class MonitorMLService : IMonitorMLService
 
         // Analysis logic to give feedback
         string analysisFeedback = "Analysis: ";
+
+        if (!changeDetectionResult.Result.Success || !spikeDetectionResult.Result.Success) {
+            if (!changeDetectionResult.Result.Success) analysisFeedback += $" Changed Detection failed with Message : {changeDetectionResult.Result.Message}";
+             if (!spikeDetectionResult.Result.Success) analysisFeedback += $" Spike Detection failed with Message : {spikeDetectionResult.Result.Message}";
+            return analysisFeedback;
+     
+        }
 
         if (isChangeDetected && isSpikeDetected)
         {
@@ -91,57 +115,93 @@ public class MonitorMLService : IMonitorMLService
         return analysisFeedback;
     }
 
-    public async Task<MonitorPingInfo> GetMonitorPingInfo(MonitorContext monitorContext, int monitorIPID, int windowSize)
-{
-    var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
-        .Include(mpi => mpi.PingInfos)
-        .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
-
-    int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
-
-    if (additionalPingInfosNeeded > 0)
+    public async Task<MonitorPingInfo?> GetMonitorPingInfo(MonitorContext monitorContext, int monitorIPID, int windowSize)
     {
-        var previousDataSetID = await monitorContext.MonitorPingInfos
-            .Where(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID != 0)
-            .MaxAsync(mpi => mpi.DataSetID);
-
-        var previousMonitorPingInfo = await monitorContext.MonitorPingInfos
+        var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
             .Include(mpi => mpi.PingInfos)
-            .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == previousDataSetID);
+            .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
+        if (latestMonitorPingInfo == null) return null;
 
-        var additionalPingInfos = previousMonitorPingInfo.PingInfos
-            .OrderByDescending(pi => pi.DateSentInt)
-            .Take(additionalPingInfosNeeded)
+        int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
+
+        if (additionalPingInfosNeeded > 0)
+        {
+            var previousDataSetID = await monitorContext.MonitorPingInfos
+                .Where(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID != 0)
+                .MaxAsync(mpi => mpi.DataSetID);
+
+            var previousMonitorPingInfo = await monitorContext.MonitorPingInfos
+                .Include(mpi => mpi.PingInfos)
+                .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == previousDataSetID);
+
+            if (previousMonitorPingInfo != null)
+            {
+                var additionalPingInfos = previousMonitorPingInfo.PingInfos
+                .OrderByDescending(pi => pi.DateSentInt)
+                .Take(additionalPingInfosNeeded)
+                .ToList();
+
+                latestMonitorPingInfo.PingInfos.AddRange(additionalPingInfos);
+            }
+        }
+
+        latestMonitorPingInfo.PingInfos = latestMonitorPingInfo.PingInfos
+            .OrderBy(pi => pi.DateSentInt)
             .ToList();
 
-        latestMonitorPingInfo.PingInfos.AddRange(additionalPingInfos);
+        return latestMonitorPingInfo;
     }
 
-    latestMonitorPingInfo.PingInfos = latestMonitorPingInfo.PingInfos
-        .OrderBy(pi => pi.DateSentInt)
-        .ToList();
+    private bool CheckMonitorPingInfoOk(MonitorPingInfo? monitorPingInfo, int monitorIPID, DetectionResult detectionResult)
+    {
+        if (monitorPingInfo == null)
+        {
+            detectionResult.Result.Success = false;
+            detectionResult.Result.Message = $" Error : Host with ID {monitorIPID} returned null.";
+            return false;
+        }
+        if (monitorPingInfo.PingInfos == null) { 
+              detectionResult.Result.Success = false;
+            detectionResult.Result.Message = $" Error : Host with ID {monitorIPID} contains no event data.";
+            return false;
+        }
 
-    return latestMonitorPingInfo;
-}
-
+        if (monitorPingInfo.PingInfos.Count < predictWindow)
+        {
+            detectionResult.Result.Success = false;
+            detectionResult.Result.Message = $" Error : MonitorPingInfo with ID {monitorIPID} not enough data for prediction was retrieved . { predictWindow-monitorPingInfo.PingInfos.Count} more events needs to make a prediction.";
+            return false;
+        }
+        return true;
+    }
     public async Task<DetectionResult> InitChangeDetection(int monitorIPID)
     {
         var detectionResult = new DetectionResult();
-
-        using (var scope = _scopeFactory.CreateScope())
+        try
         {
-            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            var monitorPingInfo = await GetMonitorPingInfo(monitorContext, monitorIPID, predictWindow);
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+                var monitorPingInfo = await GetMonitorPingInfo(monitorContext, monitorIPID, predictWindow);
+                if (!CheckMonitorPingInfoOk( monitorPingInfo,monitorIPID, detectionResult)) {
+                    return detectionResult;
+                }
 
+                var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
 
-            var localPingInfos = GetLocalPingInfos(monitorPingInfo);
+                _mlModel = new ChangeDetectionModel(monitorPingInfo!.ID, 90d);
+                //_mlModel.Train(localPingInfos);
+                detectionResult = PredictForHostChange(localPingInfos);
 
-            _mlModel = new ChangeDetectionModel(monitorPingInfo.ID, 90d);
-            //_mlModel.Train(localPingInfos);
-            detectionResult = PredictForHostChange(localPingInfos);
+                _logger.LogInformation($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
-            _logger.LogInformation($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
-
+            }
+        }
+        catch (Exception e)
+        {
+            detectionResult.Result.Success = false;
+            detectionResult.Result.Message = $" Error : Could not run InitSpikeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
+            return detectionResult;
         }
         return detectionResult;
     }
@@ -149,19 +209,32 @@ public class MonitorMLService : IMonitorMLService
     public async Task<DetectionResult> InitSpikeDetection(int monitorIPID)
     {
         var detectionResult = new DetectionResult();
-        using (var scope = _scopeFactory.CreateScope())
+        try
         {
-            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            var monitorPingInfo = await GetMonitorPingInfo(monitorContext, monitorIPID, predictWindow);
+            using (var scope = _scopeFactory.CreateScope())
+            {
+                var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+                var monitorPingInfo = await GetMonitorPingInfo(monitorContext, monitorIPID, predictWindow);
+                 if (!CheckMonitorPingInfoOk( monitorPingInfo,monitorIPID, detectionResult)) {
+                    return detectionResult;
+                }
+                var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
 
-            var localPingInfos = GetLocalPingInfos(monitorPingInfo);
+                _mlModel = new SpikeDetectionModel(monitorPingInfo!.ID, 99d);
+                //_mlModel.Train(localPingInfos);
+                detectionResult = PredictForHostSpike(localPingInfos);
+                _logger.LogInformation($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
-            _mlModel = new SpikeDetectionModel(monitorPingInfo.ID, 99d);
-            //_mlModel.Train(localPingInfos);
-            detectionResult = PredictForHostSpike(localPingInfos);
-            _logger.LogInformation($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
+            }
 
         }
+        catch (Exception e)
+        {
+            detectionResult.Result.Success = false;
+            detectionResult.Result.Message = $" Error : Could not run InitSpikeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
+            return detectionResult;
+        }
+
         return detectionResult;
     }
 
@@ -256,6 +329,8 @@ public class DetectionResult
     public bool IsIssueDetected { get; set; }
     public int NumberOfDetections { get; set; }
     public double MartingaleValue { get; set; }
+    public bool IsDataLimited { get; set; } = false;
+    public ResultObj Result { get; set; } = new ResultObj();
     // You can add more fields as required
 }
 

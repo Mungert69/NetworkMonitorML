@@ -50,7 +50,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             ExchangeName = "mlCheck",
             FuncName = "mlCheck",
             MessageTimeout = 60000
+        }); _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "mlCheckHost",
+            FuncName = "mlCheckHost",
+            MessageTimeout = 60000
         });
+
     }
     protected override ResultObj DeclareConsumers()
     {
@@ -93,6 +99,21 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     }
                 };
                     break;
+                     case "mlCheckHost":
+                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.Received += async (model, ea) =>
+                {
+                    try
+                    {
+                        result = await CheckHost(ConvertToObject<MonitorMLCheckObj>(model, ea));
+                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckHost " + ex.Message);
+                    }
+                };
+                    break;
 
             }
         });
@@ -115,6 +136,25 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         try
         {
             result = await _mlService.MLCheck(serviceObj);
+            _logger.LogInformation(result.Message);
+        }
+        catch (Exception e)
+        {
+            result.Data = null;
+            result.Success = false;
+            result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+            _logger.LogError(result.Message);
+        }
+        return result;
+    }
+      public async Task<ResultObj> CheckHost(MonitorMLCheckObj checkHostObj)
+    {
+        ResultObj result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : CheckHost : ";
+        try
+        {
+            result = await _mlService.CheckHost(checkHostObj.MonitorIPID);
             _logger.LogInformation(result.Message);
         }
         catch (Exception e)
