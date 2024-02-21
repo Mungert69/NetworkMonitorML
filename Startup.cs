@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NetworkMonitor.ML.Services;
+using NetworkMonitor.ML.Data;
 using NetworkMonitor.Data;
 using NetworkMonitor.Objects;
 using Microsoft.AspNetCore.Http;
@@ -15,6 +16,7 @@ using System.Collections.Generic;
 using NetworkMonitor.Utils;
 using NetworkMonitor.Objects.Factory;
 using NetworkMonitor.Objects.Repository;
+using NetworkMonitor.ML.Model;
 using HostInitActions;
 using Microsoft.Extensions.Logging;
 using NetworkMonitor.Utils.Helpers;
@@ -52,6 +54,8 @@ namespace NetworkMonitor.ML
                      }
             ));
 
+            services.AddSingleton<IMLModelFactory, MLModelFactory>();
+            services.AddSingleton<IMonitorMLDataRepo, MonitorMLDataRepo>();
             services.AddSingleton<IMonitorMLService, MonitorMLService>();
             services.AddSingleton<IRabbitListener, RabbitListener>();
             services.AddSingleton<IRabbitRepo, RabbitRepo>();

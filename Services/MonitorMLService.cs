@@ -7,6 +7,7 @@ using NetworkMonitor.Objects;
 using System.Threading.Tasks;
 using NetworkMonitor.Objects.ServiceMessage;
 using NetworkMonitor.Data;
+using NetworkMonitor.ML.Data;
 using NetworkMonitor.ML.Model;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
@@ -19,14 +20,14 @@ public interface IMonitorMLService
 
     Task Init();
     Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj);
-    List<LocalPingInfo> TrainForHost(int monitorPingInfoID);
+    Task<List<LocalPingInfo>> TrainForHost(int monitorPingInfoID);
     DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos);
     DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos);
     Task<DetectionResult> InitChangeDetection(int monitorIPID);
     Task<DetectionResult> InitSpikeDetection(int monitorIPID);
 
      Task<ResultObj> CheckHost(int monitorIPID);
-
+int PredictWindow { get ; set ; }
 
 }
 
@@ -37,25 +38,25 @@ public class MonitorMLService : IMonitorMLService
     private ILogger _logger;
     private int _issueThreshold = 3;
 
-    private int predictWindow = 300;
-    private IServiceScopeFactory _scopeFactory;
+    private int _predictWindow = 300;
+    //private IServiceScopeFactory _scopeFactory;
+     private readonly IMLModelFactory _mlModelFactory;
+    private readonly IMonitorMLDataRepo _monitorMLDataRepo;
 
     private DeviationAnalyzer _deviationAnalyzer = new DeviationAnalyzer(10, 1);
 
-    public MonitorMLService(ILogger<MonitorMLService> logger, IServiceScopeFactory scopeFactory)
+    public int PredictWindow { get => _predictWindow; set => _predictWindow = value; }
+
+    public MonitorMLService(ILogger<MonitorMLService> logger, IMonitorMLDataRepo monitorMLDataRepo, IMLModelFactory mlModelFactory)
     {
         _logger = logger;
-        _scopeFactory = scopeFactory;
+        //_scopeFactory = scopeFactory;
+        _mlModelFactory = mlModelFactory;
+        _monitorMLDataRepo = monitorMLDataRepo;
     }
     public async Task Init()
     {
-         int monitorIPID = 2;
-        var changeDetectionResult = await InitChangeDetection(monitorIPID);
-        var spikeDetectionResult = await InitSpikeDetection(monitorIPID);
-
-        var combinedAnalysis = AnalyzeResults(changeDetectionResult, spikeDetectionResult);
-        _logger.LogInformation($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
-  
+       
          }
 
     public async Task<ResultObj> CheckHost(int monitorIPID) {
@@ -115,44 +116,8 @@ public class MonitorMLService : IMonitorMLService
         return analysisFeedback;
     }
 
-    public async Task<MonitorPingInfo?> GetMonitorPingInfo(MonitorContext monitorContext, int monitorIPID, int windowSize)
-    {
-        var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
-            .Include(mpi => mpi.PingInfos)
-            .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
-        if (latestMonitorPingInfo == null) return null;
-
-        int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
-
-        if (additionalPingInfosNeeded > 0)
-        {
-            var previousDataSetID = await monitorContext.MonitorPingInfos
-                .Where(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID != 0)
-                .MaxAsync(mpi => mpi.DataSetID);
-
-            var previousMonitorPingInfo = await monitorContext.MonitorPingInfos
-                .Include(mpi => mpi.PingInfos)
-                .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == previousDataSetID);
-
-            if (previousMonitorPingInfo != null)
-            {
-                var additionalPingInfos = previousMonitorPingInfo.PingInfos
-                .OrderByDescending(pi => pi.DateSentInt)
-                .Take(additionalPingInfosNeeded)
-                .ToList();
-
-                latestMonitorPingInfo.PingInfos.AddRange(additionalPingInfos);
-            }
-        }
-
-        latestMonitorPingInfo.PingInfos = latestMonitorPingInfo.PingInfos
-            .OrderBy(pi => pi.DateSentInt)
-            .ToList();
-
-        return latestMonitorPingInfo;
-    }
-
-    private bool CheckMonitorPingInfoOk(MonitorPingInfo? monitorPingInfo, int monitorIPID, DetectionResult detectionResult)
+   
+    private bool CheckMonitorPingInfoOK(MonitorPingInfo? monitorPingInfo, int monitorIPID, DetectionResult detectionResult)
     {
         if (monitorPingInfo == null)
         {
@@ -166,10 +131,10 @@ public class MonitorMLService : IMonitorMLService
             return false;
         }
 
-        if (monitorPingInfo.PingInfos.Count < predictWindow)
+        if (monitorPingInfo.PingInfos.Count < PredictWindow)
         {
             detectionResult.Result.Success = false;
-            detectionResult.Result.Message = $" Error : MonitorPingInfo with ID {monitorIPID} not enough data for prediction was retrieved . { predictWindow-monitorPingInfo.PingInfos.Count} more events needs to make a prediction.";
+            detectionResult.Result.Message = $" Error : MonitorPingInfo with ID {monitorIPID} not enough data for prediction was retrieved . { PredictWindow-monitorPingInfo.PingInfos.Count} more events needs to make a prediction.";
             return false;
         }
         return true;
@@ -179,23 +144,21 @@ public class MonitorMLService : IMonitorMLService
         var detectionResult = new DetectionResult();
         try
         {
-            using (var scope = _scopeFactory.CreateScope())
-            {
-                var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-                var monitorPingInfo = await GetMonitorPingInfo(monitorContext, monitorIPID, predictWindow);
-                if (!CheckMonitorPingInfoOk( monitorPingInfo,monitorIPID, detectionResult)) {
+              var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow);
+                if (!CheckMonitorPingInfoOK( monitorPingInfo,monitorIPID, detectionResult)) {
                     return detectionResult;
                 }
 
                 var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
-
-                _mlModel = new ChangeDetectionModel(monitorPingInfo!.ID, 90d);
+      
+                _mlModel = _mlModelFactory.CreateChangeDetectionModel(monitorPingInfo!.ID, 90d);
                 //_mlModel.Train(localPingInfos);
                 detectionResult = PredictForHostChange(localPingInfos);
 
+
                 _logger.LogInformation($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
-            }
+            
         }
         catch (Exception e)
         {
@@ -211,21 +174,18 @@ public class MonitorMLService : IMonitorMLService
         var detectionResult = new DetectionResult();
         try
         {
-            using (var scope = _scopeFactory.CreateScope())
-            {
-                var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-                var monitorPingInfo = await GetMonitorPingInfo(monitorContext, monitorIPID, predictWindow);
-                 if (!CheckMonitorPingInfoOk( monitorPingInfo,monitorIPID, detectionResult)) {
+             var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo( monitorIPID, PredictWindow);
+                 if (!CheckMonitorPingInfoOK( monitorPingInfo,monitorIPID, detectionResult)) {
                     return detectionResult;
                 }
                 var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
 
-                _mlModel = new SpikeDetectionModel(monitorPingInfo!.ID, 99d);
+                _mlModel = _mlModelFactory.CreateSpikeDetectionModel(monitorPingInfo!.ID, 99d);
                 //_mlModel.Train(localPingInfos);
                 detectionResult = PredictForHostSpike(localPingInfos);
                 _logger.LogInformation($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
-            }
+            
 
         }
         catch (Exception e)
@@ -249,29 +209,18 @@ public class MonitorMLService : IMonitorMLService
     }
 
 
-    public List<LocalPingInfo> TrainForHost(int monitorPingInfoID)
+    public async Task <List<LocalPingInfo>> TrainForHost(int monitorPingInfoID)
     {
-        var localPingInfos = new List<LocalPingInfo>();
+        //var localPingInfos = new List<LocalPingInfo>();
 
-        using (var scope = _scopeFactory.CreateScope())
-        {
-            MonitorContext monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            localPingInfos = monitorContext.PingInfos
-                .Where(p => p.MonitorPingInfoID == monitorPingInfoID)
-                .ToList().Select(p => new LocalPingInfo
-                {
-                    DateSentInt = p.DateSentInt,
-                    RoundTripTime = p.RoundTripTime ?? 0,
-                    StatusID = p.StatusID
-                    // ... add other properties if needed ...
-                }).ToList();
+        var localPingInfos = await _monitorMLDataRepo.GetLocalPingInfosForHost(monitorPingInfoID);
 
             if (localPingInfos.Count > 0)
             {
                 _mlModel.Train(localPingInfos);
                 _logger.LogDebug($"MLSERVICE : Training PingInfo Data for host {monitorPingInfoID}.");
             }
-        }
+        
         return localPingInfos;
     }
 
@@ -285,6 +234,9 @@ public class MonitorMLService : IMonitorMLService
         // Analyze predictions
         result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
         result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
+        string issueStr = result.IsIssueDetected ? "An issue was detected " : "No issues detected "  ;
+        result.Result.Message += $" Success : Ran OK.  {issueStr}  with {result.NumberOfDetections} number of detections .";     
+        result.Result.Success=true;
         //result.MartingaleValue = predictions.Max(p => p.Prediction[3]); // Assuming the Martingale value is at index 3
 
         return result;
@@ -298,6 +250,10 @@ public class MonitorMLService : IMonitorMLService
         // Analyze predictions
         result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
         result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
+  string issueStr = result.IsIssueDetected ? "An issue was detected " : "No issues detected "  ;
+        result.Result.Message += $" Success : Ran OK.  {issueStr}  with {result.NumberOfDetections} number of detections .";     
+        result.Result.Success=true;
+        //result.MartingaleValue = predictions.Max(p => p.Prediction[3]); // Assuming the Martingale value is at index 3
 
         return result;
 
