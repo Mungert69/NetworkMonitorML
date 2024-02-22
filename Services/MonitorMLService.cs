@@ -68,53 +68,49 @@ public class MonitorMLService : IMonitorMLService
         var combinedAnalysis = AnalyzeResults(changeDetectionResult, spikeDetectionResult);
         result.Success = changeDetectionResult.Result.Success && spikeDetectionResult.Result.Success;
         result.Message = combinedAnalysis;
+        result.Data = (ChangeResult: changeDetectionResult, SpikeResult: spikeDetectionResult);
         _logger.LogInformation($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
         return result;
   
     }
 
-    private string AnalyzeResults(DetectionResult changeDetectionResult, DetectionResult spikeDetectionResult)
-    {
-        // Combining results from both models
-        bool isChangeDetected = changeDetectionResult.IsIssueDetected;
-        bool isSpikeDetected = spikeDetectionResult.IsIssueDetected;
+   private string AnalyzeResults(DetectionResult changeDetectionResult, DetectionResult spikeDetectionResult)
+{
+    // Combining results from both models
+    bool isChangeDetected = changeDetectionResult.IsIssueDetected;
+    bool isSpikeDetected = spikeDetectionResult.IsIssueDetected;
 
-        int totalDetections = changeDetectionResult.NumberOfDetections + spikeDetectionResult.NumberOfDetections;
-        double maxMartingaleValue = Math.Max(changeDetectionResult.MartingaleValue, spikeDetectionResult.MartingaleValue);
+    // Update to consider both models for max Martingale value
+    double maxMartingaleValue = Math.Max(changeDetectionResult.MaxMartingaleValue, spikeDetectionResult.MaxMartingaleValue);
 
-        // Analysis logic to give feedback
-        string analysisFeedback = "Analysis: ";
+    // Analysis logic to give feedback
+    string analysisFeedback = "Analysis: ";
 
-        if (!changeDetectionResult.Result.Success || !spikeDetectionResult.Result.Success) {
-            if (!changeDetectionResult.Result.Success) analysisFeedback += $" Changed Detection failed with Message : {changeDetectionResult.Result.Message}";
-             if (!spikeDetectionResult.Result.Success) analysisFeedback += $" Spike Detection failed with Message : {spikeDetectionResult.Result.Message}";
-            return analysisFeedback;
-     
-        }
-
-        if (isChangeDetected && isSpikeDetected)
-        {
-            analysisFeedback += $"High likelihood of issues. Detected changes: {changeDetectionResult.NumberOfDetections}, spikes: {spikeDetectionResult.NumberOfDetections}.";
-        }
-        else if (isChangeDetected || isSpikeDetected)
-        {
-            analysisFeedback += $"Possible issues detected. ";
-            analysisFeedback += isChangeDetected ? $"Changes detected: {changeDetectionResult.NumberOfDetections}. " : "";
-            analysisFeedback += isSpikeDetected ? $"Spikes detected: {spikeDetectionResult.NumberOfDetections}. " : "";
-        }
-        else
-        {
-            analysisFeedback += "No significant issues detected.";
-        }
-
-        // Adding Martingale value analysis if relevant
-        if (maxMartingaleValue > _issueThreshold) // Define someThreshold based on your requirements
-        {
-            analysisFeedback += $" Martingale value is high: {maxMartingaleValue}, indicating a sudden change.";
-        }
-
+    if (!changeDetectionResult.Result.Success || !spikeDetectionResult.Result.Success) {
+        if (!changeDetectionResult.Result.Success) analysisFeedback += $" Change Detection failed with Message: {changeDetectionResult.Result.Message}.";
+        if (!spikeDetectionResult.Result.Success) analysisFeedback += $" Spike Detection failed with Message: {spikeDetectionResult.Result.Message}.";
         return analysisFeedback;
     }
+
+    if (isChangeDetected || isSpikeDetected) {
+        analysisFeedback += "Possible issues detected. ";
+        if (isChangeDetected) {
+            analysisFeedback += $"Changes detected: {changeDetectionResult.NumberOfDetections}, Avg Score: {changeDetectionResult.AverageScore:F2}, Min P-Value: {changeDetectionResult.MinPValue:F2}. ";
+        }
+        if (isSpikeDetected) {
+            analysisFeedback += $"Spikes detected: {spikeDetectionResult.NumberOfDetections}, Avg Score: {spikeDetectionResult.AverageScore:F2}, Min P-Value: {spikeDetectionResult.MinPValue:F2}. ";
+        }
+    } else {
+        analysisFeedback += "No significant issues detected.";
+    }
+
+    // Adding Martingale value analysis if relevant
+    if (maxMartingaleValue > _issueThreshold) { // Use a defined threshold based on your requirements
+        analysisFeedback += $"Martingale value is high: {maxMartingaleValue:F2}, indicating a sudden change.";
+    }
+
+    return analysisFeedback;
+}
 
    
     private bool CheckMonitorPingInfoOK(MonitorPingInfo? monitorPingInfo, int monitorIPID, DetectionResult detectionResult)
@@ -226,39 +222,56 @@ public class MonitorMLService : IMonitorMLService
 
 
 
-    public DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos)
+  public DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos)
+{
+    var result = new DetectionResult();
+    var predictions = _mlModel.PredictList(localPingInfos).ToList();
+
+    result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
+    result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
+
+    // Check if there are any detections before calculating average and minimum
+    if (result.NumberOfDetections > 0)
     {
-        var result = new DetectionResult();
-        var predictions = _mlModel.PredictList(localPingInfos);
-        _mlModel.PrintPrediction(predictions);
-        // Analyze predictions
-        result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
-        result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
-        string issueStr = result.IsIssueDetected ? "An issue was detected " : "No issues detected "  ;
-        result.Result.Message += $" Success : Ran OK.  {issueStr}  with {result.NumberOfDetections} number of detections .";     
-        result.Result.Success=true;
-        //result.MartingaleValue = predictions.Max(p => p.Prediction[3]); // Assuming the Martingale value is at index 3
-
-        return result;
-
+        result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
+        result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
     }
-    public DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos)
+
+    // Ensure there are predictions before attempting to find the max Martingale value
+    if (predictions.Any())
     {
-        var result = new DetectionResult();
-        var predictions = _mlModel.PredictList(localPingInfos);
-        _mlModel.PrintPrediction(predictions);
-        // Analyze predictions
-        result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
-        result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
-  string issueStr = result.IsIssueDetected ? "An issue was detected " : "No issues detected "  ;
-        result.Result.Message += $" Success : Ran OK.  {issueStr}  with {result.NumberOfDetections} number of detections .";     
-        result.Result.Success=true;
-        //result.MartingaleValue = predictions.Max(p => p.Prediction[3]); // Assuming the Martingale value is at index 3
-
-        return result;
-
+        result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
     }
-    public async Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj)
+
+    result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
+    result.Result.Success = true;
+
+    return result;
+}
+
+ public DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos)
+{
+    var result = new DetectionResult();
+    var predictions = _mlModel.PredictList(localPingInfos).ToList();
+
+    result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
+    result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
+
+    // Check if there are any detections before calculating average and minimum
+    if (result.NumberOfDetections > 0)
+    {
+        result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
+        result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
+    }
+
+    // For Spike Detection, if there's no Martingale value, adjust this section accordingly
+    result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
+    result.Result.Success = true;
+
+    return result;
+}
+
+  public async Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj)
     {
         ResultObj result = new ResultObj();
         result.Success = false;
@@ -284,9 +297,12 @@ public class DetectionResult
 {
     public bool IsIssueDetected { get; set; }
     public int NumberOfDetections { get; set; }
-    public double MartingaleValue { get; set; }
     public bool IsDataLimited { get; set; } = false;
+    public double AverageScore { get; set; }
+    public double MinPValue { get; set; }
+    public double MaxMartingaleValue { get; set; }
     public ResultObj Result { get; set; } = new ResultObj();
-    // You can add more fields as required
+    // Additional fields as required
 }
+
 
