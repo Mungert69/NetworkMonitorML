@@ -149,21 +149,21 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
     }
       public async Task<ResultObj> CheckHost(MonitorMLCheckObj checkHostObj)
     {
-        ResultObj result = new ResultObj();
-        result.Success = false;
-        result.Message = "MessageAPI : CheckHost : ";
+        var tResult = new TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>();
+        tResult.Success = false;
+        tResult.Message = "MessageAPI : CheckHost : ";
         try
         {
-            result = await _mlService.CheckHost(checkHostObj.MonitorIPID);
-            _logger.LogInformation(result.Message);
+            tResult = await _mlService.CheckHost(checkHostObj.MonitorIPID);
+            _logger.LogInformation(tResult.Message);
         }
         catch (Exception e)
         {
-            result.Data = null;
-            result.Success = false;
-            result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
-            _logger.LogError(result.Message);
+            tResult.Success = false;
+            tResult.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+            _logger.LogError(tResult.Message);
         }
+        var result = new ResultObj() { Success = tResult.Success, Message = tResult.Message, Data = tResult.Data };
         return result;
     }
 

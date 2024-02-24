@@ -54,7 +54,8 @@ namespace NetworkMonitor.ML.Model
         }
         public override void Train(List<LocalPingInfo> data)
         {
-            _trainer.Train(data);
+            // No need to train this ML model
+            // _trainer.Train(data);
         }
 
         public override float Predict(LocalPingInfo input)
@@ -71,8 +72,7 @@ namespace NetworkMonitor.ML.Model
             private readonly string _modelPath;
             private MLContext _mlContext;
             private double _confidence;
-            private TimeSeriesPredictionEngine<LocalPingInfo, AnomalyPrediction> _engine;
-
+          
             public Trainer(string modelPath, MLContext mLContext, double confidence)
             {
                 _modelPath = modelPath;
@@ -80,10 +80,12 @@ namespace NetworkMonitor.ML.Model
                 _confidence = confidence;
             }
 
-            public TimeSeriesPredictionEngine<LocalPingInfo, AnomalyPrediction> Engine { get => _engine; set => _engine = value; }
-
+           
             public void Train(List<LocalPingInfo> localPingInfos)
             {
+                // Not Implemented this model does not use training.
+                /*
+                 public TimeSeriesPredictionEngine<LocalPingInfo, AnomalyPrediction> Engine { get => _engine; set => _engine = value; }
 
                 var dataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
@@ -97,7 +99,8 @@ namespace NetworkMonitor.ML.Model
                     AnomalyPrediction>(_mlContext);
 
 
-                Engine.CheckPoint(_mlContext, _modelPath);
+                Engine.CheckPoint(_mlContext, _modelPath);*/
+
 
             }
         }

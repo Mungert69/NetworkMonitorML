@@ -2,6 +2,12 @@
 	"folders": [
 		{
 			"path": "."
+		},
+		{
+			"path": "../NetworkMonitorData"
+		},
+		{
+			"path": "../NetworkMonitor"
 		}
 	],
 	"settings": {}

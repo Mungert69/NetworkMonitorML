@@ -21,26 +21,27 @@ public interface IMonitorMLService
     Task Init();
     Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj);
     Task<List<LocalPingInfo>> TrainForHost(int monitorPingInfoID);
-    DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos);
-    DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos);
+    DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos, int monitorIPID);
+    DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos, int monitorIPID);
     Task<DetectionResult> InitChangeDetection(int monitorIPID);
     Task<DetectionResult> InitSpikeDetection(int monitorIPID);
 
-     Task<ResultObj> CheckHost(int monitorIPID);
-int PredictWindow { get ; set ; }
+    Task<TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>> CheckHost(int monitorIPID);
+    int PredictWindow { get; set; }
 
 }
 
 
 public class MonitorMLService : IMonitorMLService
 {
-    private IMLModel _mlModel;
+    private Dictionary<(int monitorIPID, string modelType), IMLModel> _models = new Dictionary<(int monitorIPID, string modelType), IMLModel>();
+
     private ILogger _logger;
     private int _issueThreshold = 3;
 
     private int _predictWindow = 300;
     //private IServiceScopeFactory _scopeFactory;
-     private readonly IMLModelFactory _mlModelFactory;
+    private readonly IMLModelFactory _mlModelFactory;
     private readonly IMonitorMLDataRepo _monitorMLDataRepo;
 
     private DeviationAnalyzer _deviationAnalyzer = new DeviationAnalyzer(10, 1);
@@ -56,11 +57,41 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task Init()
     {
-       
-         }
 
-    public async Task<ResultObj> CheckHost(int monitorIPID) {
-        var result = new ResultObj();
+    }
+    private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence)
+    {
+        var key = (monitorIPID, modelType);
+
+        if (!_models.ContainsKey(key))
+        {
+            await GetOrCreateModel(monitorIPID, modelType, confidence);
+        }
+    }
+
+    private async Task<IMLModel> GetOrCreateModel(int monitorIPID, string modelType, double confidence)
+    {
+        var key = (monitorIPID, modelType);
+
+        if (!_models.TryGetValue(key, out var model))
+        {
+            model = _mlModelFactory.CreateModel(modelType, monitorIPID, confidence);
+            _models[key] = model;
+
+            // Optionally, load existing training data for the host and train the model
+            // var localPingInfos = await _monitorMLDataRepo.GetLocalPingInfosForHost(monitorIPID);
+            // if (localPingInfos.Any())
+            // {
+            //     model.Train(localPingInfos);
+            // }
+        }
+
+        return model;
+    }
+
+    public async Task<TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>> CheckHost(int monitorIPID)
+    {
+        var result = new TResultObj<(DetectionResult changeDetectionResult,DetectionResult spikeDetectionResult )>();
 
         var changeDetectionResult = await InitChangeDetection(monitorIPID);
         var spikeDetectionResult = await InitSpikeDetection(monitorIPID);
@@ -68,51 +99,58 @@ public class MonitorMLService : IMonitorMLService
         var combinedAnalysis = AnalyzeResults(changeDetectionResult, spikeDetectionResult);
         result.Success = changeDetectionResult.Result.Success && spikeDetectionResult.Result.Success;
         result.Message = combinedAnalysis;
-        result.Data = (ChangeResult: changeDetectionResult, SpikeResult: spikeDetectionResult);
+        result.Data = (changeDetectionResult, spikeDetectionResult);
         _logger.LogInformation($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
         return result;
-  
+
     }
 
-   private string AnalyzeResults(DetectionResult changeDetectionResult, DetectionResult spikeDetectionResult)
-{
-    // Combining results from both models
-    bool isChangeDetected = changeDetectionResult.IsIssueDetected;
-    bool isSpikeDetected = spikeDetectionResult.IsIssueDetected;
+    private string AnalyzeResults(DetectionResult changeDetectionResult, DetectionResult spikeDetectionResult)
+    {
+        // Combining results from both models
+        bool isChangeDetected = changeDetectionResult.IsIssueDetected;
+        bool isSpikeDetected = spikeDetectionResult.IsIssueDetected;
 
-    // Update to consider both models for max Martingale value
-    double maxMartingaleValue = Math.Max(changeDetectionResult.MaxMartingaleValue, spikeDetectionResult.MaxMartingaleValue);
+        // Update to consider both models for max Martingale value
+        double maxMartingaleValue = Math.Max(changeDetectionResult.MaxMartingaleValue, spikeDetectionResult.MaxMartingaleValue);
 
-    // Analysis logic to give feedback
-    string analysisFeedback = "Analysis: ";
+        // Analysis logic to give feedback
+        string analysisFeedback = "Analysis: ";
 
-    if (!changeDetectionResult.Result.Success || !spikeDetectionResult.Result.Success) {
-        if (!changeDetectionResult.Result.Success) analysisFeedback += $" Change Detection failed with Message: {changeDetectionResult.Result.Message}.";
-        if (!spikeDetectionResult.Result.Success) analysisFeedback += $" Spike Detection failed with Message: {spikeDetectionResult.Result.Message}.";
+        if (!changeDetectionResult.Result.Success || !spikeDetectionResult.Result.Success)
+        {
+            if (!changeDetectionResult.Result.Success) analysisFeedback += $" Change Detection failed with Message: {changeDetectionResult.Result.Message}.";
+            if (!spikeDetectionResult.Result.Success) analysisFeedback += $" Spike Detection failed with Message: {spikeDetectionResult.Result.Message}.";
+            return analysisFeedback;
+        }
+
+        if (isChangeDetected || isSpikeDetected)
+        {
+            analysisFeedback += "Possible issues detected. ";
+            if (isChangeDetected)
+            {
+                analysisFeedback += $"Changes detected: {changeDetectionResult.NumberOfDetections}, Avg Score: {changeDetectionResult.AverageScore:F2}, Min P-Value: {changeDetectionResult.MinPValue:F2}. ";
+            }
+            if (isSpikeDetected)
+            {
+                analysisFeedback += $"Spikes detected: {spikeDetectionResult.NumberOfDetections}, Avg Score: {spikeDetectionResult.AverageScore:F2}, Min P-Value: {spikeDetectionResult.MinPValue:F2}. ";
+            }
+        }
+        else
+        {
+            analysisFeedback += "No significant issues detected.";
+        }
+
+        // Adding Martingale value analysis if relevant
+        if (maxMartingaleValue > _issueThreshold)
+        { // Use a defined threshold based on your requirements
+            analysisFeedback += $"Martingale value is high: {maxMartingaleValue:F2}, indicating a sudden change.";
+        }
+
         return analysisFeedback;
     }
 
-    if (isChangeDetected || isSpikeDetected) {
-        analysisFeedback += "Possible issues detected. ";
-        if (isChangeDetected) {
-            analysisFeedback += $"Changes detected: {changeDetectionResult.NumberOfDetections}, Avg Score: {changeDetectionResult.AverageScore:F2}, Min P-Value: {changeDetectionResult.MinPValue:F2}. ";
-        }
-        if (isSpikeDetected) {
-            analysisFeedback += $"Spikes detected: {spikeDetectionResult.NumberOfDetections}, Avg Score: {spikeDetectionResult.AverageScore:F2}, Min P-Value: {spikeDetectionResult.MinPValue:F2}. ";
-        }
-    } else {
-        analysisFeedback += "No significant issues detected.";
-    }
 
-    // Adding Martingale value analysis if relevant
-    if (maxMartingaleValue > _issueThreshold) { // Use a defined threshold based on your requirements
-        analysisFeedback += $"Martingale value is high: {maxMartingaleValue:F2}, indicating a sudden change.";
-    }
-
-    return analysisFeedback;
-}
-
-   
     private bool CheckMonitorPingInfoOK(MonitorPingInfo? monitorPingInfo, int monitorIPID, DetectionResult detectionResult)
     {
         if (monitorPingInfo == null)
@@ -121,8 +159,9 @@ public class MonitorMLService : IMonitorMLService
             detectionResult.Result.Message = $" Error : Host with ID {monitorIPID} returned null.";
             return false;
         }
-        if (monitorPingInfo.PingInfos == null) { 
-              detectionResult.Result.Success = false;
+        if (monitorPingInfo.PingInfos == null)
+        {
+            detectionResult.Result.Success = false;
             detectionResult.Result.Message = $" Error : Host with ID {monitorIPID} contains no event data.";
             return false;
         }
@@ -130,7 +169,7 @@ public class MonitorMLService : IMonitorMLService
         if (monitorPingInfo.PingInfos.Count < PredictWindow)
         {
             detectionResult.Result.Success = false;
-            detectionResult.Result.Message = $" Error : MonitorPingInfo with ID {monitorIPID} not enough data for prediction was retrieved . { PredictWindow-monitorPingInfo.PingInfos.Count} more events needs to make a prediction.";
+            detectionResult.Result.Message = $" Error : MonitorPingInfo with ID {monitorIPID} not enough data for prediction was retrieved . {PredictWindow - monitorPingInfo.PingInfos.Count} more events needs to make a prediction.";
             return false;
         }
         return true;
@@ -140,21 +179,22 @@ public class MonitorMLService : IMonitorMLService
         var detectionResult = new DetectionResult();
         try
         {
-              var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow);
-                if (!CheckMonitorPingInfoOK( monitorPingInfo,monitorIPID, detectionResult)) {
-                    return detectionResult;
-                }
+            var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow);
+            if (!CheckMonitorPingInfoOK(monitorPingInfo, monitorIPID, detectionResult))
+            {
+                return detectionResult;
+            }
 
-                var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
-      
-                _mlModel = _mlModelFactory.CreateChangeDetectionModel(monitorPingInfo!.ID, 90d);
-                //_mlModel.Train(localPingInfos);
-                detectionResult = PredictForHostChange(localPingInfos);
+            var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
+            await EnsureModelInitialized(monitorIPID, "Change", 90d);
+            //_mlModel = _mlModelFactory.CreateModel("Change", monitorPingInfo!.ID, 90d);
+            //_mlModel.Train(localPingInfos);
+            detectionResult = PredictForHostChange(localPingInfos, monitorIPID);
 
 
-                _logger.LogInformation($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
+            _logger.LogInformation($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
-            
+
         }
         catch (Exception e)
         {
@@ -170,18 +210,19 @@ public class MonitorMLService : IMonitorMLService
         var detectionResult = new DetectionResult();
         try
         {
-             var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo( monitorIPID, PredictWindow);
-                 if (!CheckMonitorPingInfoOK( monitorPingInfo,monitorIPID, detectionResult)) {
-                    return detectionResult;
-                }
-                var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
+            var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow);
+            if (!CheckMonitorPingInfoOK(monitorPingInfo, monitorIPID, detectionResult))
+            {
+                return detectionResult;
+            }
+            var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
+            await EnsureModelInitialized(monitorIPID, "Spike", 99d);
+            //_mlModel = _mlModelFactory.CreateModel("Spike", monitorPingInfo!.ID, 99d);
+            //_mlModel.Train(localPingInfos);
+            detectionResult = PredictForHostSpike(localPingInfos, monitorIPID);
+            _logger.LogInformation($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
-                _mlModel = _mlModelFactory.CreateSpikeDetectionModel(monitorPingInfo!.ID, 99d);
-                //_mlModel.Train(localPingInfos);
-                detectionResult = PredictForHostSpike(localPingInfos);
-                _logger.LogInformation($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
-            
 
         }
         catch (Exception e)
@@ -205,73 +246,85 @@ public class MonitorMLService : IMonitorMLService
     }
 
 
-    public async Task <List<LocalPingInfo>> TrainForHost(int monitorPingInfoID)
+    public async Task<List<LocalPingInfo>> TrainForHost(int monitorIPID)
     {
         //var localPingInfos = new List<LocalPingInfo>();
 
-        var localPingInfos = await _monitorMLDataRepo.GetLocalPingInfosForHost(monitorPingInfoID);
+        var localPingInfos = await _monitorMLDataRepo.GetLocalPingInfosForHost(monitorIPID);
 
-            if (localPingInfos.Count > 0)
-            {
-                _mlModel.Train(localPingInfos);
-                _logger.LogDebug($"MLSERVICE : Training PingInfo Data for host {monitorPingInfoID}.");
-            }
-        
+        if (localPingInfos.Count > 0)
+        {
+            //_mlModel.Train(localPingInfos);
+            _logger.LogDebug($"MLSERVICE : Training PingInfo Data for host {monitorIPID}.");
+        }
+
         return localPingInfos;
     }
 
 
 
-  public DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos)
-{
-    var result = new DetectionResult();
-    var predictions = _mlModel.PredictList(localPingInfos).ToList();
-
-    result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
-    result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
-
-    // Check if there are any detections before calculating average and minimum
-    if (result.NumberOfDetections > 0)
+    public DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos, int monitorIPID)
     {
-        result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
-        result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
+        var result = new DetectionResult();
+        var modelType = "Change"; // Define model type
+        var key = (monitorIPID, modelType);
+        if (!_models.TryGetValue(key, out var model))
+        {
+            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found.");
+        }
+        var predictions = model.PredictList(localPingInfos).ToList();
+
+        result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
+        result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
+
+        // Check if there are any detections before calculating average and minimum
+        if (result.NumberOfDetections > 0)
+        {
+            result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
+            result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
+        }
+
+        // Ensure there are predictions before attempting to find the max Martingale value
+        if (predictions.Any())
+        {
+            result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
+        }
+
+        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
+        result.Result.Success = true;
+
+        return result;
     }
 
-    // Ensure there are predictions before attempting to find the max Martingale value
-    if (predictions.Any())
+    public DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos, int monitorIPID)
     {
-        result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
+        var result = new DetectionResult();
+        var modelType = "Spike"; // Define model type
+        var key = (monitorIPID, modelType);
+        if (!_models.TryGetValue(key, out var model))
+        {
+            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found.");
+        }
+        var predictions = model.PredictList(localPingInfos).ToList();
+
+        result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
+        result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
+
+        // Check if there are any detections before calculating average and minimum
+        if (result.NumberOfDetections > 0)
+        {
+            result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
+            result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
+        }
+
+        // For Spike Detection, if there's no Martingale value, adjust this section accordingly
+        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
+        result.Result.Success = true;
+
+        return result;
     }
 
-    result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
-    result.Result.Success = true;
-
-    return result;
-}
-
- public DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos)
-{
-    var result = new DetectionResult();
-    var predictions = _mlModel.PredictList(localPingInfos).ToList();
-
-    result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
-    result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
-
-    // Check if there are any detections before calculating average and minimum
-    if (result.NumberOfDetections > 0)
-    {
-        result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
-        result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
-    }
-
-    // For Spike Detection, if there's no Martingale value, adjust this section accordingly
-    result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
-    result.Result.Success = true;
-
-    return result;
-}
-
-  public async Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj)
+    public async Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj)
     {
         ResultObj result = new ResultObj();
         result.Success = false;

@@ -20,7 +20,6 @@ namespace NetworkMonitor.ML.Model
         {
             var modelPath = $"{_basePath}/spike_model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();
-                        // No need to train this ML model
             _trainer = new Trainer(modelPath, _mlContext, confidence);
             _predictor = new Predictor(modelPath, _mlContext, confidence);
             this.Confidence = confidence;
@@ -28,7 +27,8 @@ namespace NetworkMonitor.ML.Model
 
         public override void Train(List<LocalPingInfo> data)
         {
-            _trainer.Train(data);
+            // No need to train this ML model
+            //_trainer.Train(data);
         }
 
         public override float Predict(LocalPingInfo input)
@@ -56,6 +56,8 @@ namespace NetworkMonitor.ML.Model
 
             public void Train(List<LocalPingInfo> localPingInfos)
             {
+                // Not Implemented this model does not use training.
+                /*
                 var dataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
@@ -64,6 +66,7 @@ namespace NetworkMonitor.ML.Model
 
                 // Save the model to a file.
                 _mlContext.Model.Save(model, dataView.Schema, _modelPath);
+                */
             }
         }
 

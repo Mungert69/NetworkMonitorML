@@ -160,8 +160,16 @@ namespace NetworkMonitor.Tests
             var result = await service.CheckHost(monitorIPID);
 
             // Assert
-            Assert.True(result.Success);
-            //_loggerMock.Verify(x => x.LogInformation(It.IsAny<string>()), Times.AtLeastOnce);
+             Assert.True(result.Success, "The prediction did not compete with success.");
+            var detectionResult = result.Data;
+
+            // Now you can assert specific aspects of the DetectionResult
+            Assert.True(!detectionResult.ChangeResult.IsIssueDetected, "A change was detected.");
+            Assert.True(detectionResult.ChangeResult.NumberOfDetections == 0, "Changes were detected.");
+            Assert.True(detectionResult.SpikeResult.IsIssueDetected, "No spike was detected.");
+            Assert.True(detectionResult.SpikeResult.NumberOfDetections == 3, "Two spikes not detected.");
+            Assert.True(detectionResult.SpikeResult.AverageScore == 1000, "The average score is out of the expected range.");
+          
         }
 
         [Fact]
@@ -179,7 +187,7 @@ namespace NetworkMonitor.Tests
             // Assume the model can handle pattern changes effectively
             // Further setup for ML model to predict based on changed data could be here
 
-              IMLModelFactory mlModelFactory = new MLModelFactory();
+            IMLModelFactory mlModelFactory = new MLModelFactory();
             var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory);
             service.PredictWindow = predictWindow;
             // Act
@@ -189,7 +197,17 @@ namespace NetworkMonitor.Tests
 
             // Assert
             // Assuming that an accurate prediction with changed pattern means success
-            Assert.True(result.Success, "The prediction was not accurate with the pattern change.");
+            Assert.True(result.Success, "The prediction did not compete with success.");
+            var detectionResult = result.Data;
+
+            // Now you can assert specific aspects of the DetectionResult
+            Assert.True(detectionResult.ChangeResult.IsIssueDetected, "A change was not detected.");
+            Assert.True(detectionResult.ChangeResult.NumberOfDetections == 1, "No Changes were detected.");
+            Assert.True(detectionResult.SpikeResult.IsIssueDetected, "No spike was detected.");
+            Assert.True(detectionResult.SpikeResult.NumberOfDetections == 2, "Two spikes not detected.");
+            Assert.True(detectionResult.SpikeResult.AverageScore == 70, "The average score is out of the expected range.");
+            //Assert.InRange(changeResult.MinPValue, 0, pValueThreshold, "The minimum p-value is out of the expected range.");
+            // Adjust 'thresholdLow', 'thresholdHigh', and 'pValueThreshold' according to your expectations
         }
 
         [Fact]
@@ -207,7 +225,7 @@ namespace NetworkMonitor.Tests
             // Further setup for ML model to predict based on data with spikes and changes could be here
             // This may involve mocking the model's response to such data or ensuring the model factory produces a model capable of handling this complexity
 
-                IMLModelFactory mlModelFactory = new MLModelFactory();
+            IMLModelFactory mlModelFactory = new MLModelFactory();
             var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory);
             service.PredictWindow = predictWindow;
             // Act
@@ -215,10 +233,15 @@ namespace NetworkMonitor.Tests
             // Act
             var result = await service.CheckHost(monitorIPID);
 
-            // Assert
-            // Assuming accurate prediction in complex scenario equals success
-            Assert.True(result.Success, "The prediction was not accurate with both spikes and changes in the data pattern.");
-        }
+            var detectionResult = result.Data;
+
+            // Now you can assert specific aspects of the DetectionResult
+            Assert.True(detectionResult.ChangeResult.IsIssueDetected, "No change was detected.");
+            Assert.True(detectionResult.ChangeResult.NumberOfDetections == 1, "More than one Changes were detected.");
+            Assert.True(detectionResult.SpikeResult.IsIssueDetected, "No spike was detected.");
+            Assert.True(detectionResult.SpikeResult.NumberOfDetections == 3, "Three spikes not detected.");
+            Assert.True(detectionResult.SpikeResult.AverageScore == 1000, "The average score is out of the expected range.");
+              }
 
 
     }
