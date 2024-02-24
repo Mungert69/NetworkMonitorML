@@ -346,16 +346,5 @@ public class MonitorMLService : IMonitorMLService
 
 }
 
-public class DetectionResult
-{
-    public bool IsIssueDetected { get; set; }
-    public int NumberOfDetections { get; set; }
-    public bool IsDataLimited { get; set; } = false;
-    public double AverageScore { get; set; }
-    public double MinPValue { get; set; }
-    public double MaxMartingaleValue { get; set; }
-    public ResultObj Result { get; set; } = new ResultObj();
-    // Additional fields as required
-}
 
 
