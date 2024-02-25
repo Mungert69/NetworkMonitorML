@@ -25,10 +25,10 @@ namespace NetworkMonitor.Tests
             _monitorMLDataRepoMock = new Mock<IMonitorMLDataRepo>();
         }
 
-        public MonitorPingInfo GenerateLargeDataset(int monitorIPID)
+        public MonitorPingInfo GenerateLargeDataset(int monitorIPID, int dataSetID)
         {
 
-            int dataSetID = 0; // Assuming a current dataset
+            //int dataSetID = 0; // Assuming a current dataset
             int totalMinutes = 7 * 60; // Data for one day
             ushort normalPingTime = 50; // Normal ping time in ms
             ushort spikePingTime = 1000; // Simulated spike in ping time in ms
@@ -60,9 +60,9 @@ namespace NetworkMonitor.Tests
 
             return mockMonitorPingInfo;
         }
-        public MonitorPingInfo GenerateDataWithChange(int monitorIPID)
+        public MonitorPingInfo GenerateDataWithChange(int monitorIPID, int dataSetID)
         {
-            int dataSetID = 1;
+            //int dataSetID = 0;
             int totalMinutes = 7 * 60; // Simulating data for one week in minutes
             ushort normalPingTime = 50;
             ushort changedPingTime = 70; // Simulated change in ping time
@@ -89,9 +89,9 @@ namespace NetworkMonitor.Tests
                 PingInfos = pingInfos
             };
         }
-        public MonitorPingInfo GenerateDataWithSpikeAndChange(int monitorIPID)
+        public MonitorPingInfo GenerateDataWithSpikeAndChange(int monitorIPID, int dataSetID)
         {
-            int dataSetID = 1;
+            //int dataSetID = 0;
             int totalMinutes = 7 * 60; // Simulating data for one week in minutes
             ushort normalPingTime = 50;
             ushort spikePingTime = 1000; // Spike
@@ -136,7 +136,8 @@ namespace NetworkMonitor.Tests
             // Arrange
             int monitorIPID = 1; // Example monitor ID
             int predictWindow = 50;
-            var mockMonitorPingInfo = GenerateLargeDataset(monitorIPID);
+            int dataSetID = 0;
+            var mockMonitorPingInfo = GenerateLargeDataset(monitorIPID, dataSetID);
 
 
             // Creating mockLocalPingInfos from mockMonitorPingInfo
@@ -147,20 +148,21 @@ namespace NetworkMonitor.Tests
                 StatusID = pingInfo.StatusID
             }).ToList();
 
-            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>()))
+            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>(), dataSetID))
                                   .ReturnsAsync(mockMonitorPingInfo);
 
             _monitorMLDataRepoMock.Setup(repo => repo.GetLocalPingInfosForHost(monitorIPID))
                                   .ReturnsAsync(mockLocalPingInfos);
-
+            _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
+                                              .ReturnsAsync(new ResultObj());
             IMLModelFactory mlModelFactory = new MLModelFactory();
             var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory);
             service.PredictWindow = predictWindow;
             // Act
-            var result = await service.CheckHost(monitorIPID);
+            var result = await service.CheckHost(monitorIPID, dataSetID);
 
             // Assert
-             Assert.True(result.Success, "The prediction did not compete with success.");
+            Assert.True(result.Success, "The prediction did not compete with success.");
             var detectionResult = result.Data;
 
             // Now you can assert specific aspects of the DetectionResult
@@ -169,7 +171,7 @@ namespace NetworkMonitor.Tests
             Assert.True(detectionResult.SpikeResult.IsIssueDetected, "No spike was detected.");
             Assert.True(detectionResult.SpikeResult.NumberOfDetections == 3, "Two spikes not detected.");
             Assert.True(detectionResult.SpikeResult.AverageScore == 1000, "The average score is out of the expected range.");
-          
+
         }
 
         [Fact]
@@ -178,12 +180,14 @@ namespace NetworkMonitor.Tests
             // Arrange
             int monitorIPID = 2; // Example monitor ID for this test
             int predictWindow = 50; // Window for predictions
-            var mockMonitorPingInfo = GenerateDataWithChange(monitorIPID);
+            int dataSetID = 0;
+            var mockMonitorPingInfo = GenerateDataWithChange(monitorIPID, dataSetID);
 
             // Mocking the repository to return the changed dataset
-            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>()))
+            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>(), dataSetID))
                                   .ReturnsAsync(mockMonitorPingInfo);
-
+            _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
+                                              .ReturnsAsync(new ResultObj());
             // Assume the model can handle pattern changes effectively
             // Further setup for ML model to predict based on changed data could be here
 
@@ -193,7 +197,7 @@ namespace NetworkMonitor.Tests
             // Act
 
             // Act
-            var result = await service.CheckHost(monitorIPID);
+            var result = await service.CheckHost(monitorIPID, dataSetID);
 
             // Assert
             // Assuming that an accurate prediction with changed pattern means success
@@ -216,11 +220,14 @@ namespace NetworkMonitor.Tests
             // Arrange
             int monitorIPID = 3; // Example monitor ID for this scenario
             int predictWindow = 50; // Window for predictions
-            var mockMonitorPingInfo = GenerateDataWithSpikeAndChange(monitorIPID);
+            int dataSetID = 0;
+            var mockMonitorPingInfo = GenerateDataWithSpikeAndChange(monitorIPID, dataSetID);
 
             // Mocking the repository to return the dataset with both spikes and changes
-            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>()))
+            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>(), dataSetID))
                                   .ReturnsAsync(mockMonitorPingInfo);
+            _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
+                                  .ReturnsAsync(new ResultObj());
 
             // Further setup for ML model to predict based on data with spikes and changes could be here
             // This may involve mocking the model's response to such data or ensuring the model factory produces a model capable of handling this complexity
@@ -231,7 +238,7 @@ namespace NetworkMonitor.Tests
             // Act
 
             // Act
-            var result = await service.CheckHost(monitorIPID);
+            var result = await service.CheckHost(monitorIPID, dataSetID);
 
             var detectionResult = result.Data;
 
@@ -241,7 +248,7 @@ namespace NetworkMonitor.Tests
             Assert.True(detectionResult.SpikeResult.IsIssueDetected, "No spike was detected.");
             Assert.True(detectionResult.SpikeResult.NumberOfDetections == 3, "Three spikes not detected.");
             Assert.True(detectionResult.SpikeResult.AverageScore == 1000, "The average score is out of the expected range.");
-              }
+        }
 
 
     }

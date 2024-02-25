@@ -154,7 +154,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         tResult.Message = "MessageAPI : CheckHost : ";
         try
         {
-            tResult = await _mlService.CheckHost(checkHostObj.MonitorIPID);
+            tResult = await _mlService.CheckHost(checkHostObj.MonitorIPID, checkHostObj.DataSetID);
             _logger.LogInformation(tResult.Message);
         }
         catch (Exception e)

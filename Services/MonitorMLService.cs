@@ -23,10 +23,10 @@ public interface IMonitorMLService
     Task<List<LocalPingInfo>> TrainForHost(int monitorPingInfoID);
     DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos, int monitorIPID);
     DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos, int monitorIPID);
-    Task<DetectionResult> InitChangeDetection(int monitorIPID);
-    Task<DetectionResult> InitSpikeDetection(int monitorIPID);
+    Task<DetectionResult> InitChangeDetection(int monitorIPID,int dataSetID);
+    Task<DetectionResult> InitSpikeDetection(int monitorIPID, int dataSetID);
 
-    Task<TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>> CheckHost(int monitorIPID);
+    Task<TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>> CheckHost(int monitorIPID, int dataSetID);
     int PredictWindow { get; set; }
 
 }
@@ -77,30 +77,29 @@ public class MonitorMLService : IMonitorMLService
         {
             model = _mlModelFactory.CreateModel(modelType, monitorIPID, confidence);
             _models[key] = model;
-
-            // Optionally, load existing training data for the host and train the model
-            // var localPingInfos = await _monitorMLDataRepo.GetLocalPingInfosForHost(monitorIPID);
-            // if (localPingInfos.Any())
-            // {
-            //     model.Train(localPingInfos);
-            // }
         }
 
         return model;
     }
 
-    public async Task<TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>> CheckHost(int monitorIPID)
+    public async Task<TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>> CheckHost(int monitorIPID, int dataSetID)
     {
         var result = new TResultObj<(DetectionResult changeDetectionResult,DetectionResult spikeDetectionResult )>();
 
-        var changeDetectionResult = await InitChangeDetection(monitorIPID);
-        var spikeDetectionResult = await InitSpikeDetection(monitorIPID);
+        var changeDetectionResult = await InitChangeDetection(monitorIPID, dataSetID);
+        var spikeDetectionResult = await InitSpikeDetection(monitorIPID, dataSetID);
 
         var combinedAnalysis = AnalyzeResults(changeDetectionResult, spikeDetectionResult);
         result.Success = changeDetectionResult.Result.Success && spikeDetectionResult.Result.Success;
         result.Message = combinedAnalysis;
         result.Data = (changeDetectionResult, spikeDetectionResult);
         _logger.LogInformation($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
+        var predictStatus = new PredictStatus();
+        predictStatus.ChangeDetectionResult=changeDetectionResult;
+        predictStatus.SpikeDetectionResult=spikeDetectionResult;
+        predictStatus.EventTime = DateTime.UtcNow;
+        predictStatus.Message = combinedAnalysis;
+        await _monitorMLDataRepo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, predictStatus);
         return result;
 
     }
@@ -174,12 +173,12 @@ public class MonitorMLService : IMonitorMLService
         }
         return true;
     }
-    public async Task<DetectionResult> InitChangeDetection(int monitorIPID)
+    public async Task<DetectionResult> InitChangeDetection(int monitorIPID, int dataSetID)
     {
         var detectionResult = new DetectionResult();
         try
         {
-            var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow);
+            var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow,dataSetID);
             if (!CheckMonitorPingInfoOK(monitorPingInfo, monitorIPID, detectionResult))
             {
                 return detectionResult;
@@ -205,12 +204,12 @@ public class MonitorMLService : IMonitorMLService
         return detectionResult;
     }
 
-    public async Task<DetectionResult> InitSpikeDetection(int monitorIPID)
+    public async Task<DetectionResult> InitSpikeDetection(int monitorIPID, int dataSetID)
     {
         var detectionResult = new DetectionResult();
         try
         {
-            var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow);
+            var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow,dataSetID);
             if (!CheckMonitorPingInfoOK(monitorPingInfo, monitorIPID, detectionResult))
             {
                 return detectionResult;
