@@ -57,7 +57,7 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task Init()
     {
-
+        await ProcessAllHosts();
     }
     private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence)
     {
@@ -81,6 +81,43 @@ public class MonitorMLService : IMonitorMLService
 
         return model;
     }
+    
+    public async Task<ResultObj> ProcessAllHosts()
+    {
+        ResultObj result = new ResultObj();
+        try
+        {
+            var monitorIdsAndDataSetIds = await _monitorMLDataRepo.GetMonitorIPIDDataSetIDs();
+
+            foreach (var (monitorIPID, dataSetID) in monitorIdsAndDataSetIds)
+            {
+                var checkHostResult = await CheckHost(monitorIPID, dataSetID);
+               // Log the detection results for each monitor
+                _logger.LogInformation($"MonitorIPID: {monitorIPID}, DataSetID: {dataSetID} - Change Detected: {checkHostResult.Data.ChangeResult.IsIssueDetected}, Spike Detected: {checkHostResult.Data.SpikeResult.IsIssueDetected}");
+                if (checkHostResult.Data.ChangeResult.IsIssueDetected)
+                {
+                    _logger.LogInformation($"Change Detection - Number of Detections: {checkHostResult.Data.ChangeResult.NumberOfDetections}, Avg Score: {checkHostResult.Data.ChangeResult.AverageScore}, Min P-Value: {checkHostResult.Data.ChangeResult.MinPValue}");
+                }
+                if (checkHostResult.Data.SpikeResult.IsIssueDetected)
+                {
+                    _logger.LogInformation($"Spike Detection - Number of Detections: {checkHostResult.Data.SpikeResult.NumberOfDetections}, Avg Score: {checkHostResult.Data.SpikeResult.AverageScore}, Min P-Value: {checkHostResult.Data.SpikeResult.MinPValue}");
+                }
+
+            }
+
+            result.Success = true;
+            result.Message = "Processed all monitors successfully.";
+            // Optionally, set result.Data to some relevant data
+        }
+        catch (Exception e)
+        {
+            _logger.LogError($"Error processing all monitors: {e.Message}");
+            result.Success = false;
+            result.Message = $"Error processing all monitors: {e.Message}";
+        }
+
+        return result;
+    }
 
     public async Task<TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>> CheckHost(int monitorIPID, int dataSetID)
     {
@@ -97,7 +134,8 @@ public class MonitorMLService : IMonitorMLService
         var predictStatus = new PredictStatus();
         predictStatus.ChangeDetectionResult=changeDetectionResult;
         predictStatus.SpikeDetectionResult=spikeDetectionResult;
-        predictStatus.EventTime = DateTime.UtcNow;
+        var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow,dataSetID);
+        if (monitorPingInfo!=null) predictStatus.EventTime = monitorPingInfo.DateEnded;
         predictStatus.Message = combinedAnalysis;
         await _monitorMLDataRepo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, predictStatus);
         return result;

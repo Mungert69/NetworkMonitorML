@@ -17,6 +17,7 @@ public interface IMonitorMLDataRepo
     Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID);
     Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID);
     Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus);
+    Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs();
 }
 
 public class MonitorMLDataRepo : IMonitorMLDataRepo
@@ -77,6 +78,27 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         }
 
     }
+    public async Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs()
+{
+    using (var scope = _scopeFactory.CreateScope())
+    {
+        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+        
+        // Assuming you want to fetch MonitorPingInfos based on a certain condition
+        // This example fetches all MonitorPingInfos, but you should adjust the Where clause as needed
+        var monitorPingInfos = await monitorContext.MonitorPingInfos
+            .Where(mpi => /* your condition here */ true) // Replace true with your actual condition
+            .Select(mpi => new { mpi.MonitorIPID, mpi.DataSetID })
+            .ToListAsync();
+
+        var result = monitorPingInfos
+            .Select(mpi => (mpi.MonitorIPID, mpi.DataSetID))
+            .ToList();
+
+        return result;
+    }
+}
+
 
     public async Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID)
     {
