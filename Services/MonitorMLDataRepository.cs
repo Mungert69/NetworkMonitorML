@@ -79,25 +79,26 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
     }
     public async Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs()
-{
-    using (var scope = _scopeFactory.CreateScope())
     {
-        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-        
-        // Assuming you want to fetch MonitorPingInfos based on a certain condition
-        // This example fetches all MonitorPingInfos, but you should adjust the Where clause as needed
-        var monitorPingInfos = await monitorContext.MonitorPingInfos
-            .Where(mpi => /* your condition here */ true) // Replace true with your actual condition
-            .Select(mpi => new { mpi.MonitorIPID, mpi.DataSetID })
-            .ToListAsync();
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
 
-        var result = monitorPingInfos
-            .Select(mpi => (mpi.MonitorIPID, mpi.DataSetID))
-            .ToList();
+            // Assuming you want to fetch MonitorPingInfos based on a certain condition
+            // This example fetches all MonitorPingInfos, but you should adjust the Where clause as needed
+            var monitorPingInfos = await monitorContext.MonitorPingInfos
+         .Where(mpi => monitorContext.PingInfos.Count(pi => pi.MonitorPingInfoID == mpi.ID) > 100)
+         .Select(mpi => new { mpi.MonitorIPID, mpi.DataSetID })
+         .ToListAsync();
 
-        return result;
+
+            var result = monitorPingInfos
+                .Select(mpi => (mpi.MonitorIPID, mpi.DataSetID))
+                .ToList();
+
+            return result;
+        }
     }
-}
 
 
     public async Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID)
@@ -132,7 +133,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                 // Fetch the MonitorPingInfo object by ID
                 var monitorPingInfo = await monitorContext.MonitorPingInfos
                     .Include(mpi => mpi.PredictStatus) // Include PredictStatus if it's a separate entity
-                    .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID==dataSetID);
+                    .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
 
                 if (monitorPingInfo == null)
                 {
@@ -141,21 +142,32 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                     _logger.LogError(result.Message);
                     return result;
                 }
-
+                //var flag = false;
                 // Update the MonitorPingInfo object with the prediction results
                 if (monitorPingInfo.PredictStatus == null)
                 {
-                    monitorPingInfo.PredictStatus = new PredictStatus();
+                    predictStatus.MonitorPingInfoID=monitorPingInfo.ID;
+                    monitorContext.PredictStatuses.Add(predictStatus);
+                    await monitorContext.SaveChangesAsync();
+                }
+                else
+                {
+                    /*monitorPingInfo.PredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
+                    monitorPingInfo.PredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;
+                    monitorPingInfo.PredictStatus.EventTime = predictStatus.EventTime;
+                    monitorPingInfo.PredictStatus.Message = predictStatus.Message;*/
                 }
 
-                // Assuming PredictStatus can directly store the DetectionResult objects
+                /*// Assuming PredictStatus can directly store the DetectionResult objects
                 monitorPingInfo.PredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
                 monitorPingInfo.PredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;
                 monitorPingInfo.PredictStatus.EventTime = predictStatus.EventTime;
-                monitorPingInfo.PredictStatus.Message = predictStatus.Message;
+                monitorPingInfo.PredictStatus.Message = predictStatus.Message;*/
                 // Save changes to the database
-                monitorContext.Update(monitorPingInfo);
-                await monitorContext.SaveChangesAsync();
+                // Mark entity as modified if it's not tracking changes automatically
+                //monitorContext.Entry(monitorPingInfo).State = EntityState.Modified;
+
+                // Save changes to the database
 
                 result.Success = true;
                 result.Message = $" Success : MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID {dataSetID} updated with prediction results.";
