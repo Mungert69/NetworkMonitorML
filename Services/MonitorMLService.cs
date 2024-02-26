@@ -93,15 +93,7 @@ public class MonitorMLService : IMonitorMLService
             {
                 var checkHostResult = await CheckHost(monitorIPID, dataSetID);
                // Log the detection results for each monitor
-                _logger.LogInformation($"MonitorIPID: {monitorIPID}, DataSetID: {dataSetID} - Change Detected: {checkHostResult.Data.ChangeResult.IsIssueDetected}, Spike Detected: {checkHostResult.Data.SpikeResult.IsIssueDetected}");
-                if (checkHostResult.Data.ChangeResult.IsIssueDetected)
-                {
-                    _logger.LogInformation($"Change Detection - Number of Detections: {checkHostResult.Data.ChangeResult.NumberOfDetections}, Avg Score: {checkHostResult.Data.ChangeResult.AverageScore}, Min P-Value: {checkHostResult.Data.ChangeResult.MinPValue}");
-                }
-                if (checkHostResult.Data.SpikeResult.IsIssueDetected)
-                {
-                    _logger.LogInformation($"Spike Detection - Number of Detections: {checkHostResult.Data.SpikeResult.NumberOfDetections}, Avg Score: {checkHostResult.Data.SpikeResult.AverageScore}, Min P-Value: {checkHostResult.Data.SpikeResult.MinPValue}");
-                }
+               
 
             }
 
@@ -123,6 +115,7 @@ public class MonitorMLService : IMonitorMLService
     {
         var result = new TResultObj<(DetectionResult changeDetectionResult,DetectionResult spikeDetectionResult )>();
 
+       
         var changeDetectionResult = await InitChangeDetection(monitorIPID, dataSetID);
         var spikeDetectionResult = await InitSpikeDetection(monitorIPID, dataSetID);
 
@@ -130,13 +123,20 @@ public class MonitorMLService : IMonitorMLService
         result.Success = changeDetectionResult.Result.Success && spikeDetectionResult.Result.Success;
         result.Message = combinedAnalysis;
         result.Data = (changeDetectionResult, spikeDetectionResult);
-        _logger.LogInformation($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
+        _logger.LogDebug($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
         var predictStatus = new PredictStatus();
         predictStatus.ChangeDetectionResult=changeDetectionResult;
         predictStatus.SpikeDetectionResult=spikeDetectionResult;
-        var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow,dataSetID);
-        if (monitorPingInfo!=null) predictStatus.EventTime = monitorPingInfo.DateEnded;
+         var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID,dataSetID);
+        if (monitorPingInfo != null) {
+             predictStatus.EventTime = monitorPingInfo.DateEnded; 
+         if (changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected)
+                {
+                    _logger.LogInformation($"MonitorPingInfo: {monitorPingInfo.ID} - {combinedAnalysis}");
+                }
+        }
         predictStatus.Message = combinedAnalysis;
+        
         await _monitorMLDataRepo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, predictStatus);
         return result;
 
@@ -223,13 +223,13 @@ public class MonitorMLService : IMonitorMLService
             }
 
             var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
-            await EnsureModelInitialized(monitorIPID, "Change", 90d);
+            await EnsureModelInitialized(monitorIPID, "Change", 98d);
             //_mlModel = _mlModelFactory.CreateModel("Change", monitorPingInfo!.ID, 90d);
             //_mlModel.Train(localPingInfos);
             detectionResult = PredictForHostChange(localPingInfos, monitorIPID);
 
 
-            _logger.LogInformation($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
+            _logger.LogDebug($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
 
         }
@@ -257,7 +257,7 @@ public class MonitorMLService : IMonitorMLService
             //_mlModel = _mlModelFactory.CreateModel("Spike", monitorPingInfo!.ID, 99d);
             //_mlModel.Train(localPingInfos);
             detectionResult = PredictForHostSpike(localPingInfos, monitorIPID);
-            _logger.LogInformation($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
+            _logger.LogDebug($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
 
 
 
@@ -344,8 +344,9 @@ public class MonitorMLService : IMonitorMLService
         }
         var predictions = model.PredictList(localPingInfos).ToList();
 
-        result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
+       
         result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
+        result.IsIssueDetected = result.NumberOfDetections > 10;
 
         // Check if there are any detections before calculating average and minimum
         if (result.NumberOfDetections > 0)

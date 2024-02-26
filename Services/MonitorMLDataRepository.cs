@@ -15,6 +15,7 @@ namespace NetworkMonitor.ML.Data;
 public interface IMonitorMLDataRepo
 {
     Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID);
+    Task<MonitorPingInfo> GetMonitorPingInfo(int monitorIPID, int dataSetID);
     Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID);
     Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus);
     Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs();
@@ -78,6 +79,21 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         }
 
     }
+    public async Task<MonitorPingInfo> GetMonitorPingInfo(int monitorIPID,  int dataSetID)
+    {
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+            var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
+            .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
+            if (latestMonitorPingInfo == null) return null;
+
+            return latestMonitorPingInfo;
+        }
+
+    }
+  
+  
     public async Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs()
     {
         using (var scope = _scopeFactory.CreateScope())
@@ -86,10 +102,14 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
             // Assuming you want to fetch MonitorPingInfos based on a certain condition
             // This example fetches all MonitorPingInfos, but you should adjust the Where clause as needed
-            var monitorPingInfos = await monitorContext.MonitorPingInfos
-         .Where(mpi => monitorContext.PingInfos.Count(pi => pi.MonitorPingInfoID == mpi.ID) > 100)
-         .Select(mpi => new { mpi.MonitorIPID, mpi.DataSetID })
-         .ToListAsync();
+           var startOfYear2024 = new DateTime(2024, 1, 1);
+
+var monitorPingInfos = await monitorContext.MonitorPingInfos
+    .Where(mpi => mpi.DateEnded >= startOfYear2024 && 
+                  monitorContext.PingInfos.Count(pi => pi.MonitorPingInfoID == mpi.ID) > 100)
+    .Select(mpi => new { mpi.MonitorIPID, mpi.DataSetID })
+    .ToListAsync();
+
 
 
             var result = monitorPingInfos
@@ -171,7 +191,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
                 result.Success = true;
                 result.Message = $" Success : MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID {dataSetID} updated with prediction results.";
-                _logger.LogInformation(result.Message);
+                _logger.LogDebug(result.Message);
             }
             catch (Exception ex)
             {
