@@ -4,6 +4,7 @@ using NetworkMonitor.ML.Model;
 using NetworkMonitor.ML.Services;
 using NetworkMonitor.ML.Data;
 using NetworkMonitor.Objects;
+using NetworkMonitor.Objects.Repository;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Linq;
@@ -17,19 +18,21 @@ namespace NetworkMonitor.Tests
         private readonly Mock<ILogger<MonitorMLService>> _loggerMock;
         private readonly Mock<IMLModelFactory> _mlModelFactoryMock;
         private readonly Mock<IMonitorMLDataRepo> _monitorMLDataRepoMock;
+        private readonly Mock<IRabbitRepo> _rabbitRepoMock;
 
         public MonitorMLServiceTests()
         {
             _loggerMock = new Mock<ILogger<MonitorMLService>>();
             _mlModelFactoryMock = new Mock<IMLModelFactory>();
             _monitorMLDataRepoMock = new Mock<IMonitorMLDataRepo>();
+            _rabbitRepoMock = new Mock<IRabbitRepo>();
         }
 
         public MonitorPingInfo GenerateLargeDataset(int monitorIPID, int dataSetID)
         {
 
             //int dataSetID = 0; // Assuming a current dataset
-            int totalMinutes = 7 * 60; // Data for one day
+            int totalMinutes = 7 * 60; 
             ushort normalPingTime = 50; // Normal ping time in ms
             ushort spikePingTime = 1000; // Simulated spike in ping time in ms
             int spikeInterval = 120; // Spike every 120 minutes
@@ -63,7 +66,7 @@ namespace NetworkMonitor.Tests
         public MonitorPingInfo GenerateDataWithChange(int monitorIPID, int dataSetID)
         {
             //int dataSetID = 0;
-            int totalMinutes = 7 * 60; // Simulating data for one week in minutes
+            int totalMinutes = 7 * 60; 
             ushort normalPingTime = 50;
             ushort changedPingTime = 70; // Simulated change in ping time
             int changeStart = totalMinutes / 2; // Change starts in the middle of the dataset
@@ -92,7 +95,7 @@ namespace NetworkMonitor.Tests
         public MonitorPingInfo GenerateDataWithSpikeAndChange(int monitorIPID, int dataSetID)
         {
             //int dataSetID = 0;
-            int totalMinutes = 7 * 60; // Simulating data for one week in minutes
+            int totalMinutes = 7 * 60; 
             ushort normalPingTime = 50;
             ushort spikePingTime = 1000; // Spike
             ushort changedPingTime = 70; // Change in normal ping time
@@ -156,7 +159,7 @@ namespace NetworkMonitor.Tests
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
                                               .ReturnsAsync(new ResultObj());
             IMLModelFactory mlModelFactory = new MLModelFactory();
-            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory);
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object);
             service.PredictWindow = predictWindow;
             // Act
             var result = await service.CheckHost(monitorIPID, dataSetID);
@@ -192,7 +195,7 @@ namespace NetworkMonitor.Tests
             // Further setup for ML model to predict based on changed data could be here
 
             IMLModelFactory mlModelFactory = new MLModelFactory();
-            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory);
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object);
             service.PredictWindow = predictWindow;
             // Act
 
@@ -233,7 +236,7 @@ namespace NetworkMonitor.Tests
             // This may involve mocking the model's response to such data or ensuring the model factory produces a model capable of handling this complexity
 
             IMLModelFactory mlModelFactory = new MLModelFactory();
-            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory);
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object);
             service.PredictWindow = predictWindow;
             // Act
 

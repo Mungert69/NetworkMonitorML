@@ -19,6 +19,7 @@ public interface IMonitorMLDataRepo
     Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID);
     Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus);
     Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs();
+    Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSize);
 }
 
 public class MonitorMLDataRepo : IMonitorMLDataRepo
@@ -31,6 +32,34 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         _scopeFactory = scopeFactory;
         _logger = logger;
     }
+public async Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSize)
+{
+    List<MonitorPingInfo> latestMonitorPingInfos = new List<MonitorPingInfo>();
+
+    using (var scope = _scopeFactory.CreateScope())
+    {
+        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+        
+        // First, get all MonitorIPIDs that have a DataSetID = 0 entry.
+        var monitorIPIDs = await monitorContext.MonitorPingInfos
+            .Where(mpi => mpi.DataSetID == 0)
+            .Select(mpi => mpi.MonitorIPID)
+            .Distinct()
+            .ToListAsync();
+
+        // For each MonitorIPID, get the MonitorPingInfo with DataSetID = 0 and its PingInfos.
+        foreach (var monitorIPID in monitorIPIDs)
+        {
+            var monitorPingInfo = await GetMonitorPingInfo(monitorIPID, windowSize, 0);
+            if (monitorPingInfo != null)
+            {
+                latestMonitorPingInfos.Add(monitorPingInfo);
+            }
+        }
+    }
+
+    return latestMonitorPingInfos;
+}
 
     public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
     {
