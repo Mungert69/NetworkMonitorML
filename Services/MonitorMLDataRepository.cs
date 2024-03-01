@@ -41,7 +41,7 @@ public async Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSiz
         var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
         
         // First, get all MonitorIPIDs that have a DataSetID = 0 entry.
-        var monitorIPIDs = await monitorContext.MonitorPingInfos
+        var monitorIPIDs = await monitorContext.MonitorPingInfos.AsNoTracking()
             .Where(mpi => mpi.DataSetID == 0)
             .Select(mpi => mpi.MonitorIPID)
             .Distinct()
@@ -61,7 +61,57 @@ public async Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSiz
     return latestMonitorPingInfos;
 }
 
-    public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
+public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
+{
+    using (var scope = _scopeFactory.CreateScope())
+    {
+        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+
+        // Fetch the latest MonitorPingInfo without including PingInfos initially.
+        var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
+            .AsNoTracking() // Use AsNoTracking for read-only operations.
+            .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
+
+        if (latestMonitorPingInfo == null) return null;
+
+        // Calculate the total number of PingInfos needed.
+        var totalPingInfosCount = await monitorContext.PingInfos
+            .AsNoTracking()
+            .CountAsync(pi => pi.MonitorPingInfoID == latestMonitorPingInfo.ID);
+
+        int additionalPingInfosNeeded = windowSize - totalPingInfosCount;
+
+        // Load PingInfos if needed. Directly use the index to fetch PingInfos.
+        if (additionalPingInfosNeeded > 0)
+        {
+            // This approach assumes you might adjust logic to fetch from previous datasets if necessary.
+            // For simplicity, fetching additional PingInfos from the same dataset as an example.
+            var additionalPingInfos = await monitorContext.PingInfos
+                .AsNoTracking()
+                .Where(pi => pi.MonitorPingInfoID == latestMonitorPingInfo.ID)
+                .OrderByDescending(pi => pi.DateSentInt)
+                .Take(additionalPingInfosNeeded)
+                .ToListAsync();
+
+            // Since PingInfos are not tracked, attach them manually to the latestMonitorPingInfo object.
+            // Note: This step depends on how you manage the relationship in memory.
+            latestMonitorPingInfo.PingInfos = additionalPingInfos.OrderBy(pi => pi.DateSentInt).ToList();
+        }
+        else
+        {
+            // Directly load the required PingInfos if no additional PingInfos are needed.
+            latestMonitorPingInfo.PingInfos = await monitorContext.PingInfos
+                .AsNoTracking()
+                .Where(pi => pi.MonitorPingInfoID == latestMonitorPingInfo.ID)
+                .OrderBy(pi => pi.DateSentInt)
+                .ToListAsync();
+        }
+
+        return latestMonitorPingInfo;
+    }
+}
+
+    public async Task<MonitorPingInfo?> GetMonitorPingInfoSlow(int monitorIPID, int windowSize, int dataSetID)
     {
         using (var scope = _scopeFactory.CreateScope())
         {

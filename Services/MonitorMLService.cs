@@ -80,7 +80,7 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task Init()
     {
-        //await ProcessAllHosts();
+        await CheckLatestHosts();
     }
     private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence)
     {
