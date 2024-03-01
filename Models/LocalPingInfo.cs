@@ -12,6 +12,6 @@ public class LocalPingInfo
 
  public class AnomalyPrediction
         {
-            [VectorType(4)]
-            public double[] Prediction { get; set; }
+    [VectorType(4)]
+    public double[] Prediction { get; set; } = new double[4];
         }

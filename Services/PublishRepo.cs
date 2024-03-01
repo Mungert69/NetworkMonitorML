@@ -19,10 +19,11 @@ namespace NetworkMonitor.ML.Repository
             var result = new ResultObj();
             try
             {
-                var alertServiceAlertObj=new AlertServiceAlertObj(){
-                    AppID=appID,
-                    AuthKey=authKey,
-                    AlertFlagObjs=alertFlagObjs
+                var alertServiceAlertObj = new AlertServiceAlertObj()
+                {
+                    AppID = appID,
+                    AuthKey = authKey,
+                    AlertFlagObjs = alertFlagObjs
                 };
 
                 await rabbitRepo.PublishAsync<AlertServiceAlertObj>("alertMessageResetAlerts", alertServiceAlertObj);
@@ -38,25 +39,25 @@ namespace NetworkMonitor.ML.Repository
             return result;
         }
 
-       /* public static void ProcessorResetAlerts(ILogger logger, IRabbitRepo rabbitRepo, Dictionary<string, List<int>> monitorIPDic)
-        {
-            try
-            {
-                foreach (KeyValuePair<string, List<int>> kvp in monitorIPDic)
-                {
-                    var monitorIPIDs = new List<int>(kvp.Value);
-                    // Dont publish this at the moment as its causing alerts to refire.
-                    rabbitRepo.Publish<List<int>>("processorResetAlerts" + kvp.Key, monitorIPIDs);
-                }
-            }
-            catch (Exception e)
-            {
-                logger.LogError(" Error : failed to publish ProcessResetAlerts. Error was :" + e.ToString());
-            }
-        }*/
+        /* public static void ProcessorResetAlerts(ILogger logger, IRabbitRepo rabbitRepo, Dictionary<string, List<int>> monitorIPDic)
+         {
+             try
+             {
+                 foreach (KeyValuePair<string, List<int>> kvp in monitorIPDic)
+                 {
+                     var monitorIPIDs = new List<int>(kvp.Value);
+                     // Dont publish this at the moment as its causing alerts to refire.
+                     rabbitRepo.Publish<List<int>>("processorResetAlerts" + kvp.Key, monitorIPIDs);
+                 }
+             }
+             catch (Exception e)
+             {
+                 logger.LogError(" Error : failed to publish ProcessResetAlerts. Error was :" + e.ToString());
+             }
+         }*/
 
-      
-        public static async Task<ResultObj> MonitorPingInfos(ILogger logger, IRabbitRepo rabbitRepo, List<MonitorPingInfo> monitorPingInfos,  string appID, string authKey)
+
+        public static async Task<ResultObj> MonitorPingInfos(ILogger logger, IRabbitRepo rabbitRepo, List<MonitorPingInfo> monitorPingInfos, string appID, string authKey)
         {
             // var _daprMetadata = new Dictionary<string, string>();
             //_daprMetadata.Add("ttlInSeconds", "120");
@@ -69,13 +70,20 @@ namespace NetworkMonitor.ML.Repository
             {
                 if (monitorPingInfos != null && monitorPingInfos.Count() != 0)
                 {
-                    int countMonPingInfos=monitorPingInfos.Count();
+                    int countMonPingInfos = monitorPingInfos.Count();
                     //var cutMonitorPingInfos = monitorPingInfos.ConvertAll(x => new MonitorPingInfo(x));
                     //timerStr += " Event (Created Cut MonitorPingInfos) at " + timer.ElapsedMilliseconds + " : ";
                     //var pingInfos = new List<PingInfo>();
                     var predictStatusAlerts = new List<PredictStatusAlert>();
-                    monitorPingInfos.ForEach(f =>
+                    foreach (var f in monitorPingInfos)
                     {
+                        if (f.PredictStatus == null)
+                        {
+                            result.Success = false;
+                            result.Message += " Error : PredictStatus is missing from MonitorPingInfo ";
+                            return result;
+                        }
+
                         f.DateEnded = DateTime.UtcNow;
                         //pingInfos.AddRange(f.PingInfos.ToList());
                         var predictStatusAlert = new PredictStatusAlert();
@@ -84,11 +92,9 @@ namespace NetworkMonitor.ML.Repository
                         predictStatusAlert.Address = f.Address;
                         predictStatusAlert.AlertFlag = f.PredictStatus.AlertFlag;
                         predictStatusAlert.AlertSent = f.PredictStatus.AlertSent;
-                        predictStatusAlert.DownCount = f.PredictStatus.DownCount;
                         predictStatusAlert.EventTime = f.PredictStatus.EventTime;
-                        predictStatusAlert.SpikeDetectionResult=f.PredictStatus.SpikeDetectionResult;
-                        predictStatusAlert.ChangeDetectionResult=f.PredictStatus.ChangeDetectionResult;
-                        predictStatusAlert.IsUp = f.PredictStatus.IsUp;
+                        predictStatusAlert.SpikeDetectionResult = f.PredictStatus.SpikeDetectionResult;
+                        predictStatusAlert.ChangeDetectionResult = f.PredictStatus.ChangeDetectionResult;
                         predictStatusAlert.Message = f.PredictStatus.Message;
                         predictStatusAlert.UserID = f.UserID;
                         predictStatusAlert.EndPointType = f.EndPointType;
@@ -97,9 +103,9 @@ namespace NetworkMonitor.ML.Repository
                         predictStatusAlert.IsEmailVerified = f.IsEmailVerified;
                         predictStatusAlerts.Add(predictStatusAlert);
                     }
-                    );
+                    
                     //timerStr += " Event (Created All PingInfos as List) at " + timer.ElapsedMilliseconds + " : ";
-                   
+
 
 
                     var processorDataObjAlert = new ProcessorDataObj();
@@ -107,20 +113,17 @@ namespace NetworkMonitor.ML.Repository
                     processorDataObjAlert.PredictStatusAlerts = predictStatusAlerts;
                     //processorDataObjAlert.PingInfos = new List<PingInfo>();
                     processorDataObjAlert.AppID = appID;
-                    processorDataObjAlert.AuthKey=authKey;
-                    int countMonStatusAlerts=predictStatusAlerts.Count();
+                    processorDataObjAlert.AuthKey = authKey;
+                    int countMonStatusAlerts = predictStatusAlerts.Count();
                     timerStr += " Event (Finished ProcessorDataObj Setup) at " + timer.ElapsedMilliseconds + " : ";
                     await rabbitRepo.PublishJsonZAsync<ProcessorDataObj>("alertUpdatePredictStatusAlerts", processorDataObjAlert);
                     timerStr += $" Event (Published {countMonStatusAlerts} predictStatusAlerts to alertservice) at " + timer.ElapsedMilliseconds + " : ";
-                    logger.LogDebug(" Sent ProcessorDataObjAlert to Alert Service :  "+JsonUtils.WriteJsonObjectToString<ProcessorDataObj>(processorDataObjAlert));
-                    
-                   
+                    logger.LogDebug(" Sent ProcessorDataObjAlert to Alert Service :  " + JsonUtils.WriteJsonObjectToString<ProcessorDataObj>(processorDataObjAlert));
 
-                    processorDataObjAlert = null;
                 }
                 logger.LogInformation(timerStr);
                 timer.Stop();
-                result.Message += " Published event ProcessorItitObj.IsProcessorReady = true ";
+                result.Message += " Success : published PredictMonitorStatuses . ";
                 result.Success = true;
                 logger.LogInformation(result.Message);
             }

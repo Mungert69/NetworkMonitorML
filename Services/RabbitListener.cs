@@ -50,10 +50,17 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             ExchangeName = "mlCheck",
             FuncName = "mlCheck",
             MessageTimeout = 60000
-        }); _rabbitMQObjs.Add(new RabbitMQObj()
+        });
+         _rabbitMQObjs.Add(new RabbitMQObj()
         {
             ExchangeName = "mlCheckHost",
             FuncName = "mlCheckHost",
+            MessageTimeout = 60000
+        });
+         _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "mlCheckLatestHosts",
+            FuncName = "mlCheckLatestHosts",
             MessageTimeout = 60000
         });
 
@@ -73,7 +80,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                 _logger.LogCritical(result.Message);
                 return;
             }
-          rabbitMQObj.Consumer = new EventingBasicConsumer(rabbitMQObj.ConnectChannel);
+            rabbitMQObj.Consumer = new EventingBasicConsumer(rabbitMQObj.ConnectChannel);
 
             if (rabbitMQObj.Consumer == null)
             {
@@ -99,7 +106,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     }
                 };
                     break;
-                     case "mlCheckHost":
+                case "mlCheckHost":
                     rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
                     rabbitMQObj.Consumer.Received += async (model, ea) =>
                 {
@@ -111,6 +118,21 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     catch (Exception ex)
                     {
                         _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckHost " + ex.Message);
+                    }
+                };
+                    break;
+                     case "mlCheckLatestHosts":
+                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.Received += async (model, ea) =>
+                {
+                    try
+                    {
+                        result = await CheckLatestHosts();
+                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckLatestHosts " + ex.Message);
                     }
                 };
                     break;
@@ -128,11 +150,16 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         return result;
     }
-    public async Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj)
+    public async Task<ResultObj> MLCheck(MonitorMLInitObj? serviceObj)
     {
         ResultObj result = new ResultObj();
         result.Success = false;
         result.Message = "MessageAPI : MLCheck : ";
+        if (serviceObj == null)
+        {
+            result.Message += " Error : serviceObj is null.";
+            return result;
+        }
         try
         {
             result = await _mlService.MLCheck(serviceObj);
@@ -147,11 +174,16 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         return result;
     }
-      public async Task<ResultObj> CheckHost(MonitorMLCheckObj checkHostObj)
+    public async Task<ResultObj> CheckHost(MonitorMLCheckObj? checkHostObj)
     {
-        var tResult = new TResultObj<(DetectionResult ChangeResult,DetectionResult SpikeResult )>();
+        var tResult = new TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>();
         tResult.Success = false;
         tResult.Message = "MessageAPI : CheckHost : ";
+        if (checkHostObj == null)
+        {
+            return new ResultObj() { Message = " Error : chechHostObj is null." };
+        }
+
         try
         {
             tResult = await _mlService.CheckHost(checkHostObj.MonitorIPID, checkHostObj.DataSetID);
@@ -166,5 +198,27 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         var result = new ResultObj() { Success = tResult.Success, Message = tResult.Message, Data = tResult.Data };
         return result;
     }
+
+    public async Task<ResultObj> CheckLatestHosts()
+    {
+        var result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : CheckLatestHosts : ";
+
+
+        try
+        {
+            result = await _mlService.CheckLatestHosts();
+            _logger.LogInformation(result.Message);
+        }
+        catch (Exception e)
+        {
+            result.Success = false;
+            result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+            _logger.LogError(result.Message);
+        }
+        return result;
+    }
+
 
 }
