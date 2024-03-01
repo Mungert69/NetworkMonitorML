@@ -70,7 +70,7 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int wind
         // Fetch the latest MonitorPingInfo without including PingInfos initially.
         var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
             .AsNoTracking() // Use AsNoTracking for read-only operations.
-            .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
+            .FirstOrDefaultAsync(mpi => mpi.Enabled && mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
 
         if (latestMonitorPingInfo == null) return null;
 

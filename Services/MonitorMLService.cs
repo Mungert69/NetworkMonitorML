@@ -53,7 +53,7 @@ public class MonitorMLService : IMonitorMLService
     private int _martingaleDetectionThreshold = 10000000;
     private int _spikeDetectionThreshold = 10;
     private double _spikeConfidence = 99;
-    private double _changeConfidence = 95;
+    private double _changeConfidence = 98;
 
     private int _predictWindow = 300;
     //private IServiceScopeFactory _scopeFactory;
@@ -80,7 +80,7 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task Init()
     {
-        await CheckLatestHosts();
+        //await CheckLatestHosts();
     }
     private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence)
     {
@@ -221,6 +221,7 @@ public class MonitorMLService : IMonitorMLService
             predictStatus.EventTime = monitorPingInfo.DateEnded;
             if (changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected)
             {
+                predictStatus.AlertFlag = true;
                 _logger.LogInformation($"MonitorPingInfo: {monitorPingInfo.ID} - {combinedAnalysis}");
             }
             predictStatus.Message = combinedAnalysis;
