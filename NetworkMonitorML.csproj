@@ -1,19 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp8.0</TargetFramework>
-    <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
-    <PublishProfile>DefaultContainer</PublishProfile>
-    <ContainerBaseImage>mcr.microsoft.com/dotnet/aspnet:8.0</ContainerBaseImage>
-    <ContainerImageName>mungert/networkmonitorml</ContainerImageName>
-    <ContainerImageTag>0.0.5</ContainerImageTag>
-    <StartupObject>NetworkMonitor.ML.Program</StartupObject>
     <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
-
+    <ContainerBaseImage>mcr.microsoft.com/dotnet/runtime:8.0</ContainerBaseImage>
+    <ContainerRepository>mungert/networkmonitorpredict</ContainerRepository>
+    <ContainerImageTag>0.0.4</ContainerImageTag>
+    <StartupObject>NetworkMonitor.ML.Program</StartupObject>
+    <Trim>True</Trim>
   </PropertyGroup>
 
   <ItemGroup>
+	      <PackageReference Include="Microsoft.NET.Build.Containers" Version="8.0.200" />
+
     <PackageReference Include="Keras.NET" Version="3.8.5" />
     <PackageReference Include="Microsoft.ML" Version="2.0.1" />
     <PackageReference Include="Microsoft.ML.TimeSeries" Version="2.0.1" />
