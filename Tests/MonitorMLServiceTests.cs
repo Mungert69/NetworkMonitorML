@@ -215,7 +215,7 @@ namespace NetworkMonitor.MonitorML.Tests
             var result = await service.CheckLatestHostsTest();
             Assert.True(result.Success, "CheckLatestHosts did not compete with success.");
 
-
+#pragma warning disable CS8602 // Nullable warning
               Assert.True(result.Data[0].Data.ChangeResult.IsIssueDetected, "No change was detected.");
             Assert.True(result.Data[0].Data.ChangeResult.NumberOfDetections == 1, "More than one Changes were detected.");
             Assert.True(result.Data[0].Data.SpikeResult.IsIssueDetected, "No spike was detected.");
@@ -226,7 +226,7 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(!result.Data[1].Data.SpikeResult.IsIssueDetected, "Spike was detected.");
             Assert.True(result.Data[1].Data.SpikeResult.NumberOfDetections == 0, "Spikes were detected.");
             Assert.True(!result.Data[2].Success, " Reult was success.");
-            
+ #pragma warning restore CS8602 // Nullable warning           
               }
 
 

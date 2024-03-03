@@ -15,7 +15,7 @@ namespace NetworkMonitor.ML.Data;
 public interface IMonitorMLDataRepo
 {
     Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID);
-    Task<MonitorPingInfo> GetMonitorPingInfo(int monitorIPID, int dataSetID);
+    Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int dataSetID);
     Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID);
     Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus);
     Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs();
@@ -158,7 +158,7 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int wind
         }
 
     }
-    public async Task<MonitorPingInfo> GetMonitorPingInfo(int monitorIPID,  int dataSetID)
+    public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID,  int dataSetID)
     {
         using (var scope = _scopeFactory.CreateScope())
         {

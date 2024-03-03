@@ -67,6 +67,7 @@ public class Predictor
     private readonly string _modelPath;
     private MLContext _mlContext;
     private ITransformer _model;
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
     public Predictor(string modelPath, MLContext mlContext)
     {
@@ -74,6 +75,8 @@ public class Predictor
         _mlContext = mlContext;
 
     }
+#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
+
 
     public float Predict(LocalPingInfo input)
     {
