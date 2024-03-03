@@ -251,10 +251,10 @@ var monitorPingInfos = await monitorContext.MonitorPingInfos
                 }
                 else
                 {
-                    /*monitorPingInfo.PredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
+                    monitorPingInfo.PredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
                     monitorPingInfo.PredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;
                     monitorPingInfo.PredictStatus.EventTime = predictStatus.EventTime;
-                    monitorPingInfo.PredictStatus.Message = predictStatus.Message;*/
+                    monitorPingInfo.PredictStatus.Message = predictStatus.Message;
                 }
 
                 /*// Assuming PredictStatus can directly store the DetectionResult objects
