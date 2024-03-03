@@ -38,7 +38,12 @@ namespace NetworkMonitor.ML
             _services = services;
             services.AddLogging(builder =>
                           {
-                              builder.AddConsole();
+                              builder.AddSimpleConsole(options =>
+                        {
+                            options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+                            options.IncludeScopes = true;
+                        });
+
                           });
             string connectionString = Configuration.GetConnectionString("DefaultConnection");
             services.AddDbContext<MonitorContext>(options =>
