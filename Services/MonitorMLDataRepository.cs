@@ -168,7 +168,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         using (var scope = _scopeFactory.CreateScope())
         {
             var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
+            var latestMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
             .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
             if (latestMonitorPingInfo == null) return null;
 
@@ -188,7 +188,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             // This example fetches all MonitorPingInfos, but you should adjust the Where clause as needed
             var startOfYear2024 = new DateTime(2024, 1, 1);
 
-            var monitorPingInfos = await monitorContext.MonitorPingInfos
+            var monitorPingInfos = await monitorContext.MonitorPingInfos.AsNoTracking()
                 .Where(mpi => mpi.DateEnded >= startOfYear2024 &&
                               monitorContext.PingInfos.Count(pi => pi.MonitorPingInfoID == mpi.ID) > 100)
                 .Select(mpi => new { mpi.MonitorIPID, mpi.DataSetID })
