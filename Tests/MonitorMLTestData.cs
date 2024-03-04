@@ -11,164 +11,164 @@ namespace NetworkMonitor.MonitorML.Tests;
 public class MonitorMLTestData
 {
 
- public static MonitorPingInfo GenerateLargeDataset(int monitorIPID, int dataSetID)
+    public static MonitorPingInfo GenerateLargeDataset(int monitorIPID, int dataSetID)
+    {
+
+        //int dataSetID = 0; // Assuming a current dataset
+        int totalMinutes = 7 * 60;
+        ushort normalPingTime = 50; // Normal ping time in ms
+        ushort spikePingTime = 1000; // Simulated spike in ping time in ms
+        int spikeInterval = 120; // Spike every 120 minutes
+        var pingInfos = new List<PingInfo>();
+
+        for (int i = 0; i < totalMinutes; i++)
         {
-
-            //int dataSetID = 0; // Assuming a current dataset
-            int totalMinutes = 7 * 60;
-            ushort normalPingTime = 50; // Normal ping time in ms
-            ushort spikePingTime = 1000; // Simulated spike in ping time in ms
-            int spikeInterval = 120; // Spike every 120 minutes
-            var pingInfos = new List<PingInfo>();
-
-            for (int i = 0; i < totalMinutes; i++)
+            ushort currentPingTime = normalPingTime;
+            if (i % spikeInterval == 0) // Introduce a spike every spikeInterval minutes
             {
-                ushort currentPingTime = normalPingTime;
-                if (i % spikeInterval == 0) // Introduce a spike every spikeInterval minutes
-                {
-                    currentPingTime = spikePingTime;
-                }
-
-                pingInfos.Add(new PingInfo
-                {
-                    DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
-                    RoundTripTime = currentPingTime,
-                    StatusID = 1
-                });
+                currentPingTime = spikePingTime;
             }
 
-            var mockMonitorPingInfo = new MonitorPingInfo
+            pingInfos.Add(new PingInfo
             {
-                MonitorIPID = monitorIPID,
-                DataSetID = dataSetID,
-                PingInfos = pingInfos
-            };
-
-            return mockMonitorPingInfo;
+                DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
+                RoundTripTime = currentPingTime,
+                StatusID = 1
+            });
         }
-        public static MonitorPingInfo GenerateDataWithChange(int monitorIPID, int dataSetID)
+
+        var mockMonitorPingInfo = new MonitorPingInfo
         {
-            //int dataSetID = 0;
-            int totalMinutes = 7 * 60;
-            ushort normalPingTime = 50;
-            ushort changedPingTime = 70; // Simulated change in ping time
-            int changeStart = 200; // Change starts in the middle of the dataset
+            MonitorIPID = monitorIPID,
+            DataSetID = dataSetID,
+            PingInfos = pingInfos
+        };
 
-            var pingInfos = new List<PingInfo>();
+        return mockMonitorPingInfo;
+    }
+    public static MonitorPingInfo GenerateDataWithChange(int monitorIPID, int dataSetID)
+    {
+        //int dataSetID = 0;
+        int totalMinutes = 7 * 60;
+        ushort normalPingTime = 50;
+        ushort changedPingTime = 70; // Simulated change in ping time
+        int changeStart = 200; // Change starts in the middle of the dataset
 
-            for (int i = 0; i < totalMinutes; i++)
+        var pingInfos = new List<PingInfo>();
+
+        for (int i = 0; i < totalMinutes; i++)
+        {
+            ushort currentPingTime = i >= changeStart ? changedPingTime : normalPingTime;
+
+            pingInfos.Add(new PingInfo
             {
-                ushort currentPingTime = i >= changeStart ? changedPingTime : normalPingTime;
+                DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
+                RoundTripTime = currentPingTime,
+                StatusID = 1
+            });
+        }
 
-                pingInfos.Add(new PingInfo
-                {
-                    DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
-                    RoundTripTime = currentPingTime,
-                    StatusID = 1
-                });
+        return new MonitorPingInfo
+        {
+            MonitorIPID = monitorIPID,
+            DataSetID = dataSetID,
+            PingInfos = pingInfos
+        };
+    }
+    public static MonitorPingInfo GenerateDataWithSpikeAndChange(int monitorIPID, int dataSetID)
+    {
+        //int dataSetID = 0;
+        int totalMinutes = 7 * 60;
+        ushort normalPingTime = 50;
+        ushort spikePingTime = 1000; // Spike
+        ushort changedPingTime = 70; // Change in normal ping time
+        int spikeInterval = 120;
+        int changeStart = totalMinutes / 2;
+
+        var pingInfos = new List<PingInfo>();
+
+        for (int i = 0; i < totalMinutes; i++)
+        {
+            ushort currentPingTime = normalPingTime;
+            if (i >= changeStart)
+            {
+                currentPingTime = changedPingTime; // Apply change in pattern
+            }
+            if (i % spikeInterval == 0) // Spike logic applies throughout the dataset
+            {
+                currentPingTime = spikePingTime;
             }
 
-            return new MonitorPingInfo
+            pingInfos.Add(new PingInfo
             {
-                MonitorIPID = monitorIPID,
-                DataSetID = dataSetID,
-                PingInfos = pingInfos
-            };
+                DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
+                RoundTripTime = currentPingTime,
+                StatusID = 1
+            });
         }
-        public static MonitorPingInfo GenerateDataWithSpikeAndChange(int monitorIPID, int dataSetID)
+
+        return new MonitorPingInfo
         {
-            //int dataSetID = 0;
-            int totalMinutes = 7 * 60;
-            ushort normalPingTime = 50;
-            ushort spikePingTime = 1000; // Spike
-            ushort changedPingTime = 70; // Change in normal ping time
-            int spikeInterval = 120;
-            int changeStart = totalMinutes / 2;
+            MonitorIPID = monitorIPID,
+            DataSetID = dataSetID,
+            PingInfos = pingInfos
+        };
+    }
+    public static MonitorPingInfo GenerateDataWithNoDetection(int monitorIPID, int dataSetID)
+    {
+        //int dataSetID = 0;
+        int totalMinutes = 7 * 60;
+        ushort normalPingTime = 50;
 
-            var pingInfos = new List<PingInfo>();
+        var pingInfos = new List<PingInfo>();
 
-            for (int i = 0; i < totalMinutes; i++)
-            {
-                ushort currentPingTime = normalPingTime;
-                if (i >= changeStart)
-                {
-                    currentPingTime = changedPingTime; // Apply change in pattern
-                }
-                if (i % spikeInterval == 0) // Spike logic applies throughout the dataset
-                {
-                    currentPingTime = spikePingTime;
-                }
-
-                pingInfos.Add(new PingInfo
-                {
-                    DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
-                    RoundTripTime = currentPingTime,
-                    StatusID = 1
-                });
-            }
-
-            return new MonitorPingInfo
-            {
-                MonitorIPID = monitorIPID,
-                DataSetID = dataSetID,
-                PingInfos = pingInfos
-            };
-        }
- public static MonitorPingInfo GenerateDataWithNoDetection(int monitorIPID, int dataSetID)
+        for (int i = 0; i < totalMinutes; i++)
         {
-            //int dataSetID = 0;
-            int totalMinutes = 7 * 60;
-            ushort normalPingTime = 50;
-          
-            var pingInfos = new List<PingInfo>();
+            ushort currentPingTime = normalPingTime;
 
-            for (int i = 0; i < totalMinutes; i++)
+            pingInfos.Add(new PingInfo
             {
-                ushort currentPingTime = normalPingTime;
-                
-                pingInfos.Add(new PingInfo
-                {
-                    DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
-                    RoundTripTime = currentPingTime,
-                    StatusID = 1
-                });
-            }
-
-            return new MonitorPingInfo
-            {
-                MonitorIPID = monitorIPID,
-                DataSetID = dataSetID,
-                PingInfos = pingInfos
-            };
+                DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
+                RoundTripTime = currentPingTime,
+                StatusID = 1
+            });
         }
 
-        public static MonitorPingInfo GenerateSmallDataWithNoDetection(int monitorIPID, int dataSetID)
+        return new MonitorPingInfo
         {
-            //int dataSetID = 0;
-            int totalMinutes = 10;
-            ushort normalPingTime = 50;
-          
-            var pingInfos = new List<PingInfo>();
+            MonitorIPID = monitorIPID,
+            DataSetID = dataSetID,
+            PingInfos = pingInfos
+        };
+    }
 
-            for (int i = 0; i < totalMinutes; i++)
-            {
-                ushort currentPingTime = normalPingTime;
-                
-                pingInfos.Add(new PingInfo
-                {
-                    DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
-                    RoundTripTime = currentPingTime,
-                    StatusID = 1
-                });
-            }
+    public static MonitorPingInfo GenerateSmallDataWithNoDetection(int monitorIPID, int dataSetID)
+    {
+        //int dataSetID = 0;
+        int totalMinutes = 10;
+        ushort normalPingTime = 50;
 
-            return new MonitorPingInfo
+        var pingInfos = new List<PingInfo>();
+
+        for (int i = 0; i < totalMinutes; i++)
+        {
+            ushort currentPingTime = normalPingTime;
+
+            pingInfos.Add(new PingInfo
             {
-                MonitorIPID = monitorIPID,
-                DataSetID = dataSetID,
-                PingInfos = pingInfos
-            };
+                DateSent = DateTime.UtcNow.AddMinutes(-totalMinutes + i),
+                RoundTripTime = currentPingTime,
+                StatusID = 1
+            });
         }
+
+        return new MonitorPingInfo
+        {
+            MonitorIPID = monitorIPID,
+            DataSetID = dataSetID,
+            PingInfos = pingInfos
+        };
+    }
 
 
 
@@ -177,9 +177,22 @@ public class MonitorMLTestData
         var systemParams = new SystemParams
         {
             ServiceID = "test",
-            ServiceAuthKey="testkey"
+            ServiceAuthKey = "testkey"
         };
         return systemParams;
+    }
+    public static MLParams GetMLParams()
+    {
+        var mlParams = new MLParams()
+        {
+            PredictWindow = 50,
+            SpikeDetectionThreshold = 2,
+            ChangeConfidence = 90,
+            SpikeConfidence = 99,
+            ChangePreTrain = 20,
+            SpikePreTrain = 20
+        };
+        return mlParams;
     }
     public static List<ProcessorObj> GetProcesorList()
     {
@@ -187,7 +200,7 @@ public class MonitorMLTestData
         processorList.Add(new ProcessorObj() { AppID = "test" });
         return processorList;
     }
-   
+
     public static DetectionResult GetDetectionResult(bool flag)
     {
         return new DetectionResult()
@@ -302,8 +315,8 @@ public class MonitorMLTestData
             MonitorPingInfoID = 5,
         });
     }
-    
-   
+
+
     public static List<UserInfo> GetUserInfos()
     {
         var userInfos = new List<UserInfo>();

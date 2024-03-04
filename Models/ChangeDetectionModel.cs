@@ -20,14 +20,15 @@ namespace NetworkMonitor.ML.Model
         private MLContext _mlContext;
                 private string _basePath = "data";
 
-        public ChangeDetectionModel(int monitorPingInfoID, double confidence) : base(monitorPingInfoID)
+        public ChangeDetectionModel(int monitorPingInfoID, double confidence, int preTrain) : base(monitorPingInfoID)
         {
             var modelPath = $"{_basePath}/model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();
             // No need to train this ML model
             _trainer = new Trainer(modelPath, _mlContext, confidence);
-            _predictor = new Predictor(modelPath, _mlContext, confidence);
+            _predictor = new Predictor(modelPath, _mlContext, confidence, preTrain);
                         this.Confidence = confidence;
+            this.PreTrain = preTrain;
         }
 
         public override void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
@@ -109,13 +110,15 @@ namespace NetworkMonitor.ML.Model
         {
             private readonly string _modelPath;
             private MLContext _mlContext;
-                        private double _confidence;
+            private double _confidence;
+            private int _preTrain;
 
-            public Predictor(string modelPath, MLContext mLContext, double confidence)
+            public Predictor(string modelPath, MLContext mLContext, double confidence, int preTrain)
             {
                 _modelPath = modelPath;
                 _mlContext = mLContext;
                 _confidence = confidence;
+                _preTrain = preTrain;
             }
 
 
@@ -139,7 +142,7 @@ namespace NetworkMonitor.ML.Model
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
 
-                var iidChangePointEstimator = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: _confidence, 20);
+                var iidChangePointEstimator = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: _confidence, changeHistoryLength: _preTrain);
 
                 var emptyDataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
                 var iidChangePointTransform = iidChangePointEstimator.Fit(emptyDataView);

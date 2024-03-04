@@ -38,6 +38,8 @@ public interface IMonitorMLService
     int SpikeDetectionThreshold { get; set; }
     double SpikeConfidence { get; set; }
     double ChangeConfidence { get; set; }
+        public int ChangePreTrain { get ; set; }
+    public int SpikePreTrain { get; set ; }
 
 
 }
@@ -50,24 +52,24 @@ public class MonitorMLService : IMonitorMLService
     private ILogger _logger;
     private IRabbitRepo _rabbitRepo;
 
-    private int _martingaleDetectionThreshold = 10000000;
-    private int _spikeDetectionThreshold = 10;
-    private double _spikeConfidence = 99;
-    private double _changeConfidence = 98;
+    private int _martingaleDetectionThreshold = 100;
+   
 
-    private int _predictWindow = 300;
     //private IServiceScopeFactory _scopeFactory;
     private readonly IMLModelFactory _mlModelFactory;
     private readonly IMonitorMLDataRepo _monitorMLDataRepo;
     private SystemParams _systemParams;
+    private MLParams _mlParams;
 
     private DeviationAnalyzer _deviationAnalyzer = new DeviationAnalyzer(10, 1);
 
-    public int PredictWindow { get => _predictWindow; set => _predictWindow = value; }
+    public int PredictWindow { get => _mlParams.PredictWindow; set => _mlParams.PredictWindow = value; }
     public int MartingaleDetectionThreshold { get => _martingaleDetectionThreshold; set => _martingaleDetectionThreshold = value; }
-    public int SpikeDetectionThreshold { get => _spikeDetectionThreshold; set => _spikeDetectionThreshold = value; }
-    public double SpikeConfidence { get => _spikeConfidence; set => _spikeConfidence = value; }
-    public double ChangeConfidence { get => _changeConfidence; set => _changeConfidence = value; }
+    public int SpikeDetectionThreshold { get => _mlParams.SpikeDetectionThreshold; set => _mlParams.SpikeDetectionThreshold = value; }
+    public double SpikeConfidence { get => _mlParams.SpikeConfidence; set => _mlParams.SpikeConfidence = value; }
+    public double ChangeConfidence { get => _mlParams.ChangeConfidence; set => _mlParams.ChangeConfidence = value; }
+    public int ChangePreTrain { get => _mlParams.ChangePreTrain; set => _mlParams.ChangePreTrain = value; }
+    public int SpikePreTrain { get => _mlParams.SpikePreTrain; set => _mlParams.SpikePreTrain = value; }
 
     public MonitorMLService(ILogger<MonitorMLService> logger, IMonitorMLDataRepo monitorMLDataRepo, IMLModelFactory mlModelFactory, IRabbitRepo rabbitRepo, ISystemParamsHelper systemParamsHelper)
     {
@@ -77,28 +79,29 @@ public class MonitorMLService : IMonitorMLService
         _monitorMLDataRepo = monitorMLDataRepo;
         _rabbitRepo = rabbitRepo;
         _systemParams = systemParamsHelper.GetSystemParams();
+                _mlParams=systemParamsHelper.GetMLParams();
     }
     public async Task Init()
     {
         //await CheckLatestHosts();
     }
-    private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence)
+    private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence, int preTrain)
     {
         var key = (monitorIPID, modelType);
 
         if (!_models.ContainsKey(key))
         {
-            await GetOrCreateModel(monitorIPID, modelType, confidence);
+            await GetOrCreateModel(monitorIPID, modelType, confidence, preTrain);
         }
     }
 
-    private async Task<IMLModel> GetOrCreateModel(int monitorIPID, string modelType, double confidence)
+    private async Task<IMLModel> GetOrCreateModel(int monitorIPID, string modelType, double confidence, int preTrain)
     {
         var key = (monitorIPID, modelType);
 
         if (!_models.TryGetValue(key, out var model))
         {
-            model = _mlModelFactory.CreateModel(modelType, monitorIPID, confidence);
+            model = _mlModelFactory.CreateModel(modelType, monitorIPID, confidence, preTrain);
             _models[key] = model;
         }
 
@@ -137,7 +140,7 @@ public class MonitorMLService : IMonitorMLService
     public async Task<ResultObj> CheckLatestHosts()
     {
         TResultObj<List<TResultObj<(DetectionResult changeResult, DetectionResult SpikeResult)>>> testResult = await CheckLatestHostsTest();
-        var result =new ResultObj();
+        var result = new ResultObj();
         result.Success = testResult.Success;
         result.Message = testResult.Message;
         return result;
@@ -152,7 +155,7 @@ public class MonitorMLService : IMonitorMLService
             // Assuming there's a method to get the latest MonitorPingInfos with a specified window size
             // This method needs to be implemented in the IMonitorMLDataRepo and MonitorMLDataRepo
 
-            var latestMonitorPingInfos = await _monitorMLDataRepo.GetLatestMonitorPingInfos(_predictWindow);
+            var latestMonitorPingInfos = await _monitorMLDataRepo.GetLatestMonitorPingInfos(_mlParams.PredictWindow);
 
             if (latestMonitorPingInfos == null || !latestMonitorPingInfos.Any())
             {
@@ -278,11 +281,11 @@ public class MonitorMLService : IMonitorMLService
             analysisFeedback += "Possible issues detected. ";
             if (isChangeDetected)
             {
-                analysisFeedback += $"Changes detected: {changeDetectionResult.NumberOfDetections}, Avg Score: {changeDetectionResult.AverageScore:F2}, Min P-Value: {changeDetectionResult.MinPValue:F2}. ";
+                analysisFeedback += $"Changes detected: first change at index {changeDetectionResult.IndexOfFirstDetection} ,number of changes {changeDetectionResult.NumberOfDetections}, Avg Score: {changeDetectionResult.AverageScore:F2}, Min P-Value: {changeDetectionResult.MinPValue:F2}. ";
             }
             if (isSpikeDetected)
             {
-                analysisFeedback += $"Spikes detected: {spikeDetectionResult.NumberOfDetections}, Avg Score: {spikeDetectionResult.AverageScore:F2}, Min P-Value: {spikeDetectionResult.MinPValue:F2}. ";
+                analysisFeedback += $"Spikes detected: first spike at index {changeDetectionResult.IndexOfFirstDetection}, number of spikes {spikeDetectionResult.NumberOfDetections}, Avg Score: {spikeDetectionResult.AverageScore:F2}, Min P-Value: {spikeDetectionResult.MinPValue:F2}. ";
             }
         }
         else
@@ -336,7 +339,7 @@ public class MonitorMLService : IMonitorMLService
             }
 
             var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
-            await EnsureModelInitialized(monitorIPID, "Change", _changeConfidence);
+            await EnsureModelInitialized(monitorIPID, "Change", _mlParams.ChangeConfidence, ChangePreTrain);
             //_mlModel = _mlModelFactory.CreateModel("Change", monitorPingInfo!.ID, 90d);
             //_mlModel.Train(localPingInfos);
             detectionResult = PredictForHostChange(localPingInfos, monitorIPID);
@@ -367,7 +370,7 @@ public class MonitorMLService : IMonitorMLService
                 return detectionResult;
             }
             var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
-            await EnsureModelInitialized(monitorIPID, "Spike", _spikeConfidence);
+            await EnsureModelInitialized(monitorIPID, "Spike", _mlParams.SpikeConfidence, SpikePreTrain);
             //_mlModel = _mlModelFactory.CreateModel("Spike", monitorPingInfo!.ID, 99d);
             //_mlModel.Train(localPingInfos);
             detectionResult = PredictForHostSpike(localPingInfos, monitorIPID);
@@ -426,6 +429,7 @@ public class MonitorMLService : IMonitorMLService
         var predictions = model.PredictList(localPingInfos).ToList();
 
         result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
+
         result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
 
         // Check if there are any detections before calculating average and minimum
@@ -440,8 +444,9 @@ public class MonitorMLService : IMonitorMLService
         {
             result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
         }
-
-        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
+        int index = predictions.FindIndex(p => p.Prediction[0] == 1);
+        result.IndexOfFirstDetection = index;
+        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at index {index}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
         result.Result.Success = true;
 
         return result;
@@ -469,8 +474,10 @@ public class MonitorMLService : IMonitorMLService
             result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
         }
 
-        // For Spike Detection, if there's no Martingale value, adjust this section accordingly
-        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
+
+        int index = predictions.FindIndex(p => p.Prediction[0] == 1);
+        result.IndexOfFirstDetection = index;
+        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at index {index}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
         result.Result.Success = true;
 
         return result;

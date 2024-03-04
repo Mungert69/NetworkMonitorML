@@ -8,9 +8,11 @@ public abstract class MLModel : IMLModel
 {
   private int _monitorPingInfoID;
   private double _confidence=95d;
+  private int _preTrain;
 
   public int MonitorPingInfoID { get => _monitorPingInfoID; }
     public double Confidence { get => _confidence; set => _confidence = value; }
+    public int PreTrain { get => _preTrain; set => _preTrain = value; }
 
     public MLModel(int monitorPingInfoID)
   {

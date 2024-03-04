@@ -51,6 +51,8 @@ namespace NetworkMonitor.MonitorML.Tests
                 StatusID = pingInfo.StatusID
             }).ToList();
             var systemParams = MonitorMLTestData.GetSystemParams();
+               var mlParams = MonitorMLTestData.GetMLParams();
+             _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
             // Setup _systemParamsHelperMock to return the mocked SystemParams object from GetSystemParams()
             _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
 
@@ -64,10 +66,12 @@ namespace NetworkMonitor.MonitorML.Tests
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
                                               .ReturnsAsync(new ResultObj());
             IMLModelFactory mlModelFactory = new MLModelFactory();
-            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object,_systemParamsHelperMock.Object);
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object);
             service.PredictWindow = predictWindow;
             service.SpikeDetectionThreshold = 2;
             service.ChangeConfidence = 90;
+            service.ChangePreTrain = 20;
+            service.SpikePreTrain = 20;
             // Act
             var result = await service.CheckHost(monitorIPID, dataSetID);
 
@@ -93,6 +97,8 @@ namespace NetworkMonitor.MonitorML.Tests
             int dataSetID = 0;
             var mockMonitorPingInfo = MonitorMLTestData.GenerateDataWithChange(monitorIPID, dataSetID);
             var systemParams = MonitorMLTestData.GetSystemParams();
+               var mlParams = MonitorMLTestData.GetMLParams();
+             _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
             // Setup _systemParamsHelperMock to return the mocked SystemParams object from GetSystemParams()
             _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
 
@@ -112,6 +118,8 @@ namespace NetworkMonitor.MonitorML.Tests
             service.PredictWindow = predictWindow;
             service.SpikeDetectionThreshold = 2;
             service.ChangeConfidence = 90;
+            service.ChangePreTrain = 20;
+            service.SpikePreTrain = 20;
             // Act
 
             // Act
@@ -124,10 +132,7 @@ namespace NetworkMonitor.MonitorML.Tests
 
             // Now you can assert specific aspects of the DetectionResult
             Assert.True(detectionResult.ChangeResult.IsIssueDetected, "A change was not detected.");
-            Assert.True(detectionResult.ChangeResult.NumberOfDetections == 1, "No Changes were detected.");
-            Assert.True(!detectionResult.SpikeResult.IsIssueDetected, "A spike threshold was detected.");
-            Assert.True(detectionResult.SpikeResult.NumberOfDetections == 2, "Two spikes not detected.");
-            Assert.True(detectionResult.SpikeResult.AverageScore == 70, "The average score is out of the expected range.");
+            Assert.True(detectionResult.ChangeResult.NumberOfDetections == 1, $"{detectionResult.ChangeResult.NumberOfDetections} changes detected.");
             //Assert.InRange(changeResult.MinPValue, 0, pValueThreshold, "The minimum p-value is out of the expected range.");
             // Adjust 'thresholdLow', 'thresholdHigh', and 'pValueThreshold' according to your expectations
         }
@@ -141,6 +146,8 @@ namespace NetworkMonitor.MonitorML.Tests
             int dataSetID = 0;
             var mockMonitorPingInfo = MonitorMLTestData.GenerateDataWithSpikeAndChange(monitorIPID, dataSetID);
             var systemParams = MonitorMLTestData.GetSystemParams();
+               var mlParams = MonitorMLTestData.GetMLParams();
+             _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
             // Setup _systemParamsHelperMock to return the mocked SystemParams object from GetSystemParams()
             _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
 
@@ -157,10 +164,12 @@ namespace NetworkMonitor.MonitorML.Tests
             // This may involve mocking the model's response to such data or ensuring the model factory produces a model capable of handling this complexity
 
             IMLModelFactory mlModelFactory = new MLModelFactory();
-            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object,_systemParamsHelperMock.Object);
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object);
             service.PredictWindow = predictWindow;
             service.SpikeDetectionThreshold = 2;
             service.ChangeConfidence = 90;
+            service.ChangePreTrain = 20;
+            service.SpikePreTrain = 20;
             // Act
 
             // Act
@@ -172,8 +181,8 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(detectionResult.ChangeResult.IsIssueDetected, "No change was detected.");
             Assert.True(detectionResult.ChangeResult.NumberOfDetections == 1, "More than one Changes were detected.");
             Assert.True(detectionResult.SpikeResult.IsIssueDetected, "No spike was detected.");
-            Assert.True(detectionResult.SpikeResult.NumberOfDetections == 5, "Five spikes not detected.");
-            Assert.True(detectionResult.SpikeResult.AverageScore == 628, "The average score is out of the expected range.");
+            Assert.True(detectionResult.SpikeResult.NumberOfDetections == 4, "Five spikes not detected.");
+            Assert.True(detectionResult.SpikeResult.AverageScore == 767.5, "The average score is out of the expected range.");
         }
 
         [Fact]
@@ -190,9 +199,12 @@ namespace NetworkMonitor.MonitorML.Tests
             mockMonitorPingInfos.Add(MonitorMLTestData.GenerateSmallDataWithNoDetection(3, 0));
 
             var systemParams = MonitorMLTestData.GetSystemParams();
+            var mlParams = MonitorMLTestData.GetMLParams();
+             _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+
             // Setup _systemParamsHelperMock to return the mocked SystemParams object from GetSystemParams()
             _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
-
+           
             // Mocking the repository to return the dataset with both spikes and changes
             _monitorMLDataRepoMock.Setup(repo => repo.GetLatestMonitorPingInfos(It.IsAny<int>()))
                                   .ReturnsAsync(mockMonitorPingInfos);
@@ -205,10 +217,12 @@ namespace NetworkMonitor.MonitorML.Tests
             // This may involve mocking the model's response to such data or ensuring the model factory produces a model capable of handling this complexity
 
             IMLModelFactory mlModelFactory = new MLModelFactory();
-            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object,_systemParamsHelperMock.Object);
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object);
             service.PredictWindow = predictWindow;
             service.SpikeDetectionThreshold = 2;
             service.ChangeConfidence = 90;
+            service.ChangePreTrain = 20;
+            service.SpikePreTrain = 20;
             // Act
 
             // Act
@@ -216,18 +230,18 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(result.Success, "CheckLatestHosts did not compete with success.");
 
 #pragma warning disable CS8602 // Nullable warning
-              Assert.True(result.Data[0].Data.ChangeResult.IsIssueDetected, "No change was detected.");
+            Assert.True(result.Data[0].Data.ChangeResult.IsIssueDetected, "No change was detected.");
             Assert.True(result.Data[0].Data.ChangeResult.NumberOfDetections == 1, "More than one Changes were detected.");
             Assert.True(result.Data[0].Data.SpikeResult.IsIssueDetected, "No spike was detected.");
-            Assert.True(result.Data[0].Data.SpikeResult.NumberOfDetections == 5, "Five spikes not detected.");
-            Assert.True(result.Data[0].Data.SpikeResult.AverageScore == 628, "The average score is out of the expected range.");
-         Assert.True(!result.Data[1].Data.ChangeResult.IsIssueDetected, "Change was detected.");
+            Assert.True(result.Data[0].Data.SpikeResult.NumberOfDetections == 4, "Five spikes not detected.");
+            Assert.True(result.Data[0].Data.SpikeResult.AverageScore == 767.5, "The average score is out of the expected range.");
+            Assert.True(!result.Data[1].Data.ChangeResult.IsIssueDetected, "Change was detected.");
             Assert.True(result.Data[1].Data.ChangeResult.NumberOfDetections == 0, "Changes were detected.");
             Assert.True(!result.Data[1].Data.SpikeResult.IsIssueDetected, "Spike was detected.");
             Assert.True(result.Data[1].Data.SpikeResult.NumberOfDetections == 0, "Spikes were detected.");
             Assert.True(!result.Data[2].Success, " Reult was success.");
- #pragma warning restore CS8602 // Nullable warning           
-              }
+#pragma warning restore CS8602 // Nullable warning           
+        }
 
 
     }

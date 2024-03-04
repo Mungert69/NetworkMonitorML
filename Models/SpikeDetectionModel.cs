@@ -16,13 +16,14 @@ namespace NetworkMonitor.ML.Model
         private MLContext _mlContext;
         private string _basePath = "data";
 
-        public SpikeDetectionModel(int monitorPingInfoID, double confidence) : base(monitorPingInfoID)
+        public SpikeDetectionModel(int monitorPingInfoID, double confidence, int preTrain) : base(monitorPingInfoID)
         {
             var modelPath = $"{_basePath}/spike_model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();
             _trainer = new Trainer(modelPath, _mlContext, confidence);
-            _predictor = new Predictor(modelPath, _mlContext, confidence);
+            _predictor = new Predictor(modelPath, _mlContext, confidence, preTrain);
             this.Confidence = confidence;
+            this.PreTrain = preTrain;
         }
 
         public override void Train(List<LocalPingInfo> data)
@@ -76,12 +77,14 @@ namespace NetworkMonitor.ML.Model
             private MLContext _mlContext;
 
             private double _confidence;
+            private int _preTrain;
 
-            public Predictor(string modelPath, MLContext mLContext, double confidence)
+            public Predictor(string modelPath, MLContext mLContext, double confidence, int preTrain)
             {
                 _modelPath = modelPath;
                 _mlContext = mLContext;
                 _confidence = confidence;
+                _preTrain = preTrain;
             }
 
             public IEnumerable<AnomalyPrediction> GetDeviations(IEnumerable<LocalPingInfo> inputs)
@@ -89,7 +92,7 @@ namespace NetworkMonitor.ML.Model
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
 
-                var iidSpikeEstimator = _mlContext.Transforms.DetectIidSpike(outputColumnName, inputColumnName, confidence: _confidence, pvalueHistoryLength: 50);
+                var iidSpikeEstimator = _mlContext.Transforms.DetectIidSpike(outputColumnName, inputColumnName, confidence: _confidence, pvalueHistoryLength : _preTrain);
 
                 var emptyDataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
                 var iidSpikeTransform = iidSpikeEstimator.Fit(emptyDataView);
