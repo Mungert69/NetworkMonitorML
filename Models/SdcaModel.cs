@@ -23,7 +23,7 @@ public class SdcaModel : MLModel
         _trainer.Train(data);
     }
 
-    public override float Predict(LocalPingInfo input)
+    public override  AnomalyPrediction Predict(LocalPingInfo input)
     {
         return _predictor.Predict(input);
     }
@@ -78,12 +78,12 @@ public class Predictor
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
 
-    public float Predict(LocalPingInfo input)
+    public AnomalyPrediction Predict(LocalPingInfo input)
     {
          _model = _mlContext.Model.Load(_modelPath, out var modelSchema);
         var predictionEngine = _mlContext.Model.CreatePredictionEngine<LocalPingInfo, AnomalyPrediction>(_model);
         var prediction = predictionEngine.Predict(input);
-        return 0f;
+        return prediction;
     }
 }
 

@@ -126,9 +126,9 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfoNotWorking(int monitorIPID
             if (additionalPingInfosNeeded > 0)
             {
                 int previousDataSetID;
-                if (dataSetID == 0) previousDataSetID = await monitorContext.MonitorPingInfos.AsNoTracking()
-                    .Where(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID != 0)
-                    .MaxAsync(mpi => mpi.DataSetID);
+                if (dataSetID == 0) { 
+                    previousDataSetID = await monitorContext.MonitorPingInfos.AsNoTracking().MaxAsync(mpi => mpi.DataSetID); 
+                    }
                 else
                 {
                     previousDataSetID = dataSetID--;

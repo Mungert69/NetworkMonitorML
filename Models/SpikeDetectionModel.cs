@@ -11,7 +11,7 @@ namespace NetworkMonitor.ML.Model
 {
     public class SpikeDetectionModel : MLModel
     {
-        private Trainer _trainer;
+        private Trainer? _trainer;
         private Predictor _predictor;
         private MLContext _mlContext;
         private string _basePath = "data";
@@ -20,7 +20,7 @@ namespace NetworkMonitor.ML.Model
         {
             var modelPath = $"{_basePath}/spike_model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();
-            _trainer = new Trainer(modelPath, _mlContext, confidence);
+            //_trainer = new Trainer(modelPath, _mlContext, confidence);
             _predictor = new Predictor(modelPath, _mlContext, confidence, preTrain);
             this.Confidence = confidence;
             this.PreTrain = preTrain;
@@ -28,11 +28,10 @@ namespace NetworkMonitor.ML.Model
 
         public override void Train(List<LocalPingInfo> data)
         {
-            // No need to train this ML model
-            //_trainer.Train(data);
+            // Not Implemented : this model does support training
         }
 
-        public override float Predict(LocalPingInfo input)
+        public override AnomalyPrediction Predict(LocalPingInfo input)
         {
             return _predictor.GetDeviation(input);
         }
@@ -100,17 +99,18 @@ namespace NetworkMonitor.ML.Model
                 var dataView = _mlContext.Data.LoadFromEnumerable(inputs);
                 IDataView transformedData = iidSpikeTransform.Transform(dataView);
                 var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false);
-
+                _mlContext.Model.Save(iidSpikeTransform, emptyDataView.Schema, _modelPath);
+    
                 return predictions;
             }
 
-            public float GetDeviation(LocalPingInfo input)
+            public AnomalyPrediction GetDeviation(LocalPingInfo input)
             {
                 var file = File.OpenRead(_modelPath);
                 var model = _mlContext.Model.Load(file, out DataViewSchema schema);
                 var engine = model.CreateTimeSeriesEngine<LocalPingInfo, AnomalyPrediction>(_mlContext);
                 var prediction = engine.Predict(input);
-                return (float)prediction.Prediction[1]; // Return the spike score
+                return prediction; // Return the spike score
             }
         }
 

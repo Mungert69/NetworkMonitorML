@@ -20,7 +20,7 @@ public abstract class MLModel : IMLModel
   }
 
   public abstract void Train(List<LocalPingInfo> data);
-  public abstract float Predict(LocalPingInfo input);
+  public abstract AnomalyPrediction Predict(LocalPingInfo input);
   public abstract IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs);
   public virtual void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
   {

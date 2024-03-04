@@ -38,8 +38,8 @@ public interface IMonitorMLService
     int SpikeDetectionThreshold { get; set; }
     double SpikeConfidence { get; set; }
     double ChangeConfidence { get; set; }
-        public int ChangePreTrain { get ; set; }
-    public int SpikePreTrain { get; set ; }
+    public int ChangePreTrain { get; set; }
+    public int SpikePreTrain { get; set; }
 
 
 }
@@ -53,7 +53,7 @@ public class MonitorMLService : IMonitorMLService
     private IRabbitRepo _rabbitRepo;
 
     private int _martingaleDetectionThreshold = 100;
-   
+
 
     //private IServiceScopeFactory _scopeFactory;
     private readonly IMLModelFactory _mlModelFactory;
@@ -79,7 +79,7 @@ public class MonitorMLService : IMonitorMLService
         _monitorMLDataRepo = monitorMLDataRepo;
         _rabbitRepo = rabbitRepo;
         _systemParams = systemParamsHelper.GetSystemParams();
-                _mlParams=systemParamsHelper.GetMLParams();
+        _mlParams = systemParamsHelper.GetMLParams();
     }
     public async Task Init()
     {
@@ -326,6 +326,41 @@ public class MonitorMLService : IMonitorMLService
         }
         return true;
     }
+
+    // New methods to handle the single input case in service logic
+    public async Task<DetectionResult> InitChangeDetection(LocalPingInfo input, int monitorIPID)
+    {
+        var detectionResult = new DetectionResult();
+        try
+        {
+            await EnsureModelInitialized(monitorIPID, "Change", _mlParams.SpikeConfidence, SpikePreTrain);
+            detectionResult = PredictForHostSpike(input, monitorIPID);
+        }
+        catch (Exception e)
+        {
+            detectionResult.Result.Success = false;
+            detectionResult.Result.Message = $" Error : Could not run InitSpikeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
+            return detectionResult;
+        }
+        return detectionResult;
+    }
+
+    public async Task<DetectionResult> InitSpikeDetection(LocalPingInfo input, int monitorIPID)
+    {
+        var detectionResult = new DetectionResult();
+        try
+        {
+            await EnsureModelInitialized(monitorIPID, "Spike", _mlParams.SpikeConfidence, SpikePreTrain);
+            detectionResult = PredictForHostSpike(input, monitorIPID);
+        }
+        catch (Exception e)
+        {
+            detectionResult.Result.Success = false;
+            detectionResult.Result.Message = $" Error : Could not run InitSpikeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
+            return detectionResult;
+        }
+        return detectionResult;
+    }
     public async Task<DetectionResult> InitChangeDetection(MonitorPingInfo monitorPingInfo)
     {
         int monitorIPID = monitorPingInfo.MonitorIPID;
@@ -451,6 +486,75 @@ public class MonitorMLService : IMonitorMLService
 
         return result;
     }
+    public DetectionResult PredictForHostChange(LocalPingInfo input, int monitorIPID)
+    {
+        var result = new DetectionResult();
+        var modelType = "Change";
+        var key = (monitorIPID, modelType);
+
+        if (!_models.TryGetValue(key, out var model))
+        {
+            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found.");
+
+        }
+
+        var prediction = model.Predict(input);
+
+
+        result.IsIssueDetected = prediction.Prediction[0] == 1;
+        result.NumberOfDetections = result.IsIssueDetected ? 1 : 0;
+
+        result.AverageScore = prediction.Prediction[1];
+        result.MinPValue = prediction.Prediction[2];
+
+        // Martingale value
+        result.MaxMartingaleValue = prediction.Prediction[3];
+
+        // Index of detection:
+        result.IndexOfFirstDetection = result.IsIssueDetected ? 0 : -1;
+        // 0 because it's the only input, -1 to signal no detection
+
+        // Message
+        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected." : "No issues detected.")}";
+        result.Result.Success = true;
+
+
+        return result;
+    }
+    public DetectionResult PredictForHostSpike(LocalPingInfo input, int monitorIPID)
+    {
+        var result = new DetectionResult();
+        var modelType = "Spike";
+        var key = (monitorIPID, modelType);
+
+        if (!_models.TryGetValue(key, out var model))
+        {
+            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found.");
+
+        }
+
+        var prediction = model.Predict(input);
+
+
+        result.IsIssueDetected = prediction.Prediction[0] == 1;
+        result.NumberOfDetections = result.IsIssueDetected ? 1 : 0;
+
+        result.AverageScore = prediction.Prediction[1];
+        result.MinPValue = prediction.Prediction[2];
+
+
+        // Index of detection:
+        result.IndexOfFirstDetection = result.IsIssueDetected ? 0 : -1;
+        // 0 because it's the only input, -1 to signal no detection
+
+        // Message
+        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? "An issue was detected." : "No issues detected.")}";
+        result.Result.Success = true;
+
+
+        return result;
+    }
+
 
     public DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos, int monitorIPID)
     {

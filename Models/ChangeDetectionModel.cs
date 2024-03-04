@@ -15,19 +15,19 @@ namespace NetworkMonitor.ML.Model
 {
     public class ChangeDetectionModel : MLModel
     {
-        private Trainer _trainer;
+        private Trainer? _trainer;
         private Predictor _predictor;
         private MLContext _mlContext;
-                private string _basePath = "data";
+        private string _basePath = "data";
 
         public ChangeDetectionModel(int monitorPingInfoID, double confidence, int preTrain) : base(monitorPingInfoID)
         {
             var modelPath = $"{_basePath}/model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();
             // No need to train this ML model
-            _trainer = new Trainer(modelPath, _mlContext, confidence);
+            //_trainer = new Trainer(modelPath, _mlContext, confidence);
             _predictor = new Predictor(modelPath, _mlContext, confidence, preTrain);
-                        this.Confidence = confidence;
+            this.Confidence = confidence;
             this.PreTrain = preTrain;
         }
 
@@ -59,7 +59,7 @@ namespace NetworkMonitor.ML.Model
             // _trainer.Train(data);
         }
 
-        public override float Predict(LocalPingInfo input)
+        public override AnomalyPrediction Predict(LocalPingInfo input)
         {
             return _predictor.GetDeviation(input);
         }
@@ -73,7 +73,7 @@ namespace NetworkMonitor.ML.Model
             private readonly string _modelPath;
             private MLContext _mlContext;
             private double _confidence;
-          
+
             public Trainer(string modelPath, MLContext mLContext, double confidence)
             {
                 _modelPath = modelPath;
@@ -81,27 +81,10 @@ namespace NetworkMonitor.ML.Model
                 _confidence = confidence;
             }
 
-           
+
             public void Train(List<LocalPingInfo> localPingInfos)
             {
-                // Not Implemented this model does not use training.
-                /*
-                 public TimeSeriesPredictionEngine<LocalPingInfo, AnomalyPrediction> Engine { get => _engine; set => _engine = value; }
-
-                var dataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
-                string outputColumnName = nameof(AnomalyPrediction.Prediction);
-                string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
-
-
-                ITransformer model = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: _confidence, changeHistoryLength: 50).Fit(
-                                               dataView); ;
-
-                Engine = model.CreateTimeSeriesEngine<LocalPingInfo,
-                    AnomalyPrediction>(_mlContext);
-
-
-                Engine.CheckPoint(_mlContext, _modelPath);*/
-
+                // Not Implemented : this model does support training
 
             }
         }
@@ -150,12 +133,12 @@ namespace NetworkMonitor.ML.Model
                 var dataView = _mlContext.Data.LoadFromEnumerable(inputs);
                 IDataView transformedData = iidChangePointTransform.Transform(dataView);
                 var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false);
-
-
+                _mlContext.Model.Save(iidChangePointTransform, emptyDataView.Schema, _modelPath);
+    
                 return predictions;
             }
 
-            public float GetDeviation(LocalPingInfo input)
+            public AnomalyPrediction GetDeviation(LocalPingInfo input)
             {
                 // Load the model.
                 var file = File.OpenRead(_modelPath);
@@ -163,7 +146,7 @@ namespace NetworkMonitor.ML.Model
                 var engine = model.CreateTimeSeriesEngine<LocalPingInfo,
                    AnomalyPrediction>(_mlContext);
                 var prediction = engine.Predict(input);
-                return (float)prediction.Prediction[1]; // Return the anomaly score
+                return prediction;
             }
         }
 
