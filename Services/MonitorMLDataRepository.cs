@@ -61,7 +61,7 @@ public async Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSiz
     return latestMonitorPingInfos;
 }
 
-public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
+public async Task<MonitorPingInfo?> GetMonitorPingInfoNotWorking(int monitorIPID, int windowSize, int dataSetID)
 {
     using (var scope = _scopeFactory.CreateScope())
     {
@@ -111,12 +111,12 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int wind
     }
 }
 
-    public async Task<MonitorPingInfo?> GetMonitorPingInfoSlow(int monitorIPID, int windowSize, int dataSetID)
+    public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
     {
         using (var scope = _scopeFactory.CreateScope())
         {
             var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
+            var latestMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
             .Include(mpi => mpi.PingInfos)
             .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
             if (latestMonitorPingInfo == null) return null;
@@ -126,7 +126,7 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int wind
             if (additionalPingInfosNeeded > 0)
             {
                 int previousDataSetID;
-                if (dataSetID == 0) previousDataSetID = await monitorContext.MonitorPingInfos
+                if (dataSetID == 0) previousDataSetID = await monitorContext.MonitorPingInfos.AsNoTracking()
                     .Where(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID != 0)
                     .MaxAsync(mpi => mpi.DataSetID);
                 else
@@ -134,13 +134,13 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int wind
                     previousDataSetID = dataSetID--;
                 }
 
-                var previousMonitorPingInfo = await monitorContext.MonitorPingInfos
+                var previousMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
                     .Include(mpi => mpi.PingInfos)
                     .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == previousDataSetID);
 
                 if (previousMonitorPingInfo != null)
                 {
-                    var additionalPingInfos = previousMonitorPingInfo.PingInfos
+                    var additionalPingInfos = previousMonitorPingInfo.PingInfos.AsNoTracking()
                     .OrderByDescending(pi => pi.DateSentInt)
                     .Take(additionalPingInfosNeeded)
                     .ToList();
