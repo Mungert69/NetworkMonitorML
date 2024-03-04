@@ -38,15 +38,16 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     public async Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSize)
     {
         _windowSize = windowSize;
-        if (_cachedMonitorPingInfos== null || _cachedMonitorPingInfos.Count==0)
+        if (_cachedMonitorPingInfos == null || _cachedMonitorPingInfos.Count == 0)
         {
-            _cachedMonitorPingInfos = await GetLatestMonitorPingInfos(windowSize);
+            _cachedMonitorPingInfos = await GetDBLatestMonitorPingInfos(windowSize);
         }
 
         return _cachedMonitorPingInfos
                .Where(mpi => mpi.DataSetID == 0)
                .ToList();
     }
+
 
     public async Task<List<MonitorPingInfo>> GetDBLatestMonitorPingInfos(int windowSize)
     {
@@ -65,7 +66,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             // For each MonitorIPID, get the MonitorPingInfo with DataSetID = 0 and its PingInfos.
             foreach (var monitorIPID in monitorIPIDs)
             {
-                var monitorPingInfo = await GetDBMonitorPingInfo(monitorIPID, windowSize, 0);
+                var monitorPingInfo = await GetDBWithContextMonitorPingInfo(monitorIPID, windowSize, 0, monitorContext);
                 if (monitorPingInfo != null)
                 {
                     latestMonitorPingInfos.Add(monitorPingInfo);
@@ -91,56 +92,60 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     }
 
 
+    public async Task<MonitorPingInfo?> GetDBWithContextMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID, MonitorContext monitorContext)
+    {
+        var latestMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
+             .Where(w => w.Enabled && w.MonitorIPID == monitorIPID && w.DataSetID == dataSetID)
+             .Include(mpi => mpi.PingInfos)
+             .FirstOrDefaultAsync();
 
+        if (latestMonitorPingInfo == null) return null;
+
+        int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
+
+        if (additionalPingInfosNeeded > 0)
+        {
+            int previousDataSetID;
+            if (dataSetID == 0)
+            {
+                previousDataSetID = await monitorContext.MonitorPingInfos.AsNoTracking().MaxAsync(mpi => mpi.DataSetID);
+            }
+            else
+            {
+                previousDataSetID = dataSetID--;
+            }
+
+            var previousMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
+            .Where(w => w.Enabled && w.MonitorIPID == monitorIPID && w.DataSetID == previousDataSetID)
+                .Include(mpi => mpi.PingInfos)
+                .FirstOrDefaultAsync();
+
+            if (previousMonitorPingInfo != null)
+            {
+                var additionalPingInfos = previousMonitorPingInfo.PingInfos
+                .OrderByDescending(pi => pi.DateSentInt)
+                .Take(additionalPingInfosNeeded)
+                .ToList();
+
+                latestMonitorPingInfo.PingInfos.AddRange(additionalPingInfos);
+            }
+        }
+
+        latestMonitorPingInfo.PingInfos = latestMonitorPingInfo.PingInfos
+            .OrderBy(pi => pi.DateSentInt)
+            .ToList();
+        return latestMonitorPingInfo;
+    }
     public async Task<MonitorPingInfo?> GetDBMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
     {
         _windowSize = windowSize;
         using (var scope = _scopeFactory.CreateScope())
         {
             var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            var latestMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
-     .Where(w => w.Enabled && w.MonitorIPID == monitorIPID && w.DataSetID == dataSetID)
-     .Include(mpi => mpi.PingInfos)
-     .FirstOrDefaultAsync();
-
-            if (latestMonitorPingInfo == null) return null;
-
-            int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
-
-            if (additionalPingInfosNeeded > 0)
-            {
-                int previousDataSetID;
-                if (dataSetID == 0)
-                {
-                    previousDataSetID = await monitorContext.MonitorPingInfos.AsNoTracking().MaxAsync(mpi => mpi.DataSetID);
-                }
-                else
-                {
-                    previousDataSetID = dataSetID--;
-                }
-
-                var previousMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
-                .Where(w => w.Enabled && w.MonitorIPID == monitorIPID && w.DataSetID == previousDataSetID)
-                    .Include(mpi => mpi.PingInfos)
-                    .FirstOrDefaultAsync();
-
-                if (previousMonitorPingInfo != null)
-                {
-                    var additionalPingInfos = previousMonitorPingInfo.PingInfos
-                    .OrderByDescending(pi => pi.DateSentInt)
-                    .Take(additionalPingInfosNeeded)
-                    .ToList();
-
-                    latestMonitorPingInfo.PingInfos.AddRange(additionalPingInfos);
-                }
-            }
-
-            latestMonitorPingInfo.PingInfos = latestMonitorPingInfo.PingInfos
-                .OrderBy(pi => pi.DateSentInt)
-                .ToList();
 
 
-            return latestMonitorPingInfo;
+
+            return await GetDBWithContextMonitorPingInfo(monitorIPID, windowSize, dataSetID, monitorContext);
         }
 
     }
@@ -200,24 +205,24 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     }
 
 
-  /*  public async Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID)
-    {
-        using (var scope = _scopeFactory.CreateScope())
-        {
-            var _context = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            var localPingInfos = await _context.PingInfos
-       .Where(p => p.MonitorPingInfoID == monitorPingInfoID)
-       .Select(p => new LocalPingInfo
-       {
-           DateSentInt = p.DateSentInt,
-           RoundTripTime = p.RoundTripTime ?? 0,
-           StatusID = p.StatusID
-       }).ToListAsync();
+    /*  public async Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID)
+      {
+          using (var scope = _scopeFactory.CreateScope())
+          {
+              var _context = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+              var localPingInfos = await _context.PingInfos
+         .Where(p => p.MonitorPingInfoID == monitorPingInfoID)
+         .Select(p => new LocalPingInfo
+         {
+             DateSentInt = p.DateSentInt,
+             RoundTripTime = p.RoundTripTime ?? 0,
+             StatusID = p.StatusID
+         }).ToListAsync();
 
-            return localPingInfos;
-        }
+              return localPingInfos;
+          }
 
-    }*/
+      }*/
 
     public ResultObj UpdateMonitorPingInfo(MonitorPingInfo updatedMonitorPingInfo)
     {
@@ -300,7 +305,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                 {
                     predictStatus.MonitorPingInfoID = monitorPingInfo.ID;
                     monitorContext.PredictStatuses.Add(predictStatus);
-                    await monitorContext.SaveChangesAsync();
+
                 }
                 else
                 {
@@ -309,7 +314,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                     monitorPingInfo.PredictStatus.EventTime = predictStatus.EventTime;
                     monitorPingInfo.PredictStatus.Message = predictStatus.Message;
                 }
-
+                    await monitorContext.SaveChangesAsync();
                 /*// Assuming PredictStatus can directly store the DetectionResult objects
                 monitorPingInfo.PredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
                 monitorPingInfo.PredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;
