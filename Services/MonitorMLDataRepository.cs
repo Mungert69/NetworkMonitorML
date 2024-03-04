@@ -140,7 +140,7 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfoNotWorking(int monitorIPID
 
                 if (previousMonitorPingInfo != null)
                 {
-                    var additionalPingInfos = previousMonitorPingInfo.PingInfos.AsNoTracking()
+                    var additionalPingInfos = previousMonitorPingInfo.PingInfos
                     .OrderByDescending(pi => pi.DateSentInt)
                     .Take(additionalPingInfosNeeded)
                     .ToList();
