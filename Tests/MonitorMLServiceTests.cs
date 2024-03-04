@@ -61,8 +61,7 @@ namespace NetworkMonitor.MonitorML.Tests
             _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, dataSetID))
                                 .ReturnsAsync(mockMonitorPingInfo);
 
-            _monitorMLDataRepoMock.Setup(repo => repo.GetLocalPingInfosForHost(monitorIPID))
-                                  .ReturnsAsync(mockLocalPingInfos);
+            
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
                                               .ReturnsAsync(new ResultObj());
             IMLModelFactory mlModelFactory = new MLModelFactory();

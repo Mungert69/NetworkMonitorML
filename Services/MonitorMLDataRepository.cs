@@ -16,7 +16,7 @@ public interface IMonitorMLDataRepo
 {
     Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID);
     Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int dataSetID);
-    Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID);
+    //Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID);
     Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus);
     Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs();
     Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSize);
@@ -26,99 +26,83 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private ILogger _logger;
+    private int _windowSize;
+    private List<MonitorPingInfo> _cachedMonitorPingInfos = new List<MonitorPingInfo>();
 
     public MonitorMLDataRepo(ILogger<MonitorMLDataRepo> logger, IServiceScopeFactory scopeFactory)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
     }
-public async Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSize)
-{
-    List<MonitorPingInfo> latestMonitorPingInfos = new List<MonitorPingInfo>();
 
-    using (var scope = _scopeFactory.CreateScope())
+    public async Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSize)
     {
-        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-        
-        // First, get all MonitorIPIDs that have a DataSetID = 0 entry.
-        var monitorIPIDs = await monitorContext.MonitorPingInfos.AsNoTracking()
-            .Where(mpi => mpi.DataSetID == 0)
-            .Select(mpi => mpi.MonitorIPID)
-            .Distinct()
-            .ToListAsync();
-
-        // For each MonitorIPID, get the MonitorPingInfo with DataSetID = 0 and its PingInfos.
-        foreach (var monitorIPID in monitorIPIDs)
+        _windowSize = windowSize;
+        if (_cachedMonitorPingInfos== null || _cachedMonitorPingInfos.Count==0)
         {
-            var monitorPingInfo = await GetMonitorPingInfo(monitorIPID, windowSize, 0);
-            if (monitorPingInfo != null)
+            _cachedMonitorPingInfos = await GetLatestMonitorPingInfos(windowSize);
+        }
+
+        return _cachedMonitorPingInfos
+               .Where(mpi => mpi.DataSetID == 0)
+               .ToList();
+    }
+
+    public async Task<List<MonitorPingInfo>> GetDBLatestMonitorPingInfos(int windowSize)
+    {
+        List<MonitorPingInfo> latestMonitorPingInfos = new List<MonitorPingInfo>();
+
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+
+            // First, get all MonitorIPIDs that have a DataSetID = 0 entry.
+            var monitorIPIDs = await monitorContext.MonitorPingInfos.AsNoTracking()
+                .Where(mpi => mpi.DataSetID == 0)
+                .Select(mpi => mpi.MonitorIPID)
+                .ToListAsync();
+
+            // For each MonitorIPID, get the MonitorPingInfo with DataSetID = 0 and its PingInfos.
+            foreach (var monitorIPID in monitorIPIDs)
             {
-                latestMonitorPingInfos.Add(monitorPingInfo);
+                var monitorPingInfo = await GetDBMonitorPingInfo(monitorIPID, windowSize, 0);
+                if (monitorPingInfo != null)
+                {
+                    latestMonitorPingInfos.Add(monitorPingInfo);
+                }
             }
         }
+
+        return latestMonitorPingInfos;
     }
-
-    return latestMonitorPingInfos;
-}
-
-public async Task<MonitorPingInfo?> GetMonitorPingInfoNotWorking(int monitorIPID, int windowSize, int dataSetID)
-{
-    using (var scope = _scopeFactory.CreateScope())
-    {
-        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-
-        // Fetch the latest MonitorPingInfo without including PingInfos initially.
-        var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
-            .AsNoTracking() // Use AsNoTracking for read-only operations.
-            .FirstOrDefaultAsync(mpi => mpi.Enabled && mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
-
-        if (latestMonitorPingInfo == null) return null;
-
-        // Calculate the total number of PingInfos needed.
-        var totalPingInfosCount = await monitorContext.PingInfos
-            .AsNoTracking()
-            .CountAsync(pi => pi.MonitorPingInfoID == latestMonitorPingInfo.ID);
-
-        int additionalPingInfosNeeded = windowSize - totalPingInfosCount;
-
-        // Load PingInfos if needed. Directly use the index to fetch PingInfos.
-        if (additionalPingInfosNeeded > 0)
-        {
-            // This approach assumes you might adjust logic to fetch from previous datasets if necessary.
-            // For simplicity, fetching additional PingInfos from the same dataset as an example.
-            var additionalPingInfos = await monitorContext.PingInfos
-                .AsNoTracking()
-                .Where(pi => pi.MonitorPingInfoID == latestMonitorPingInfo.ID)
-                .OrderByDescending(pi => pi.DateSentInt)
-                .Take(additionalPingInfosNeeded)
-                .ToListAsync();
-
-            // Since PingInfos are not tracked, attach them manually to the latestMonitorPingInfo object.
-            // Note: This step depends on how you manage the relationship in memory.
-            latestMonitorPingInfo.PingInfos = additionalPingInfos.OrderBy(pi => pi.DateSentInt).ToList();
-        }
-        else
-        {
-            // Directly load the required PingInfos if no additional PingInfos are needed.
-            latestMonitorPingInfo.PingInfos = await monitorContext.PingInfos
-                .AsNoTracking()
-                .Where(pi => pi.MonitorPingInfoID == latestMonitorPingInfo.ID)
-                .OrderBy(pi => pi.DateSentInt)
-                .ToListAsync();
-        }
-
-        return latestMonitorPingInfo;
-    }
-}
 
     public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
     {
+        // 1. Check the Cache
+        var cachedResult = _cachedMonitorPingInfos.FirstOrDefault(mpi =>
+                            mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
+        if (cachedResult != null)
+        {
+            // Adjust if windowSize filtering is needed
+            return cachedResult;
+        }
+
+        return await GetDBMonitorPingInfo(monitorIPID, windowSize, dataSetID);
+    }
+
+
+
+    public async Task<MonitorPingInfo?> GetDBMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
+    {
+        _windowSize = windowSize;
         using (var scope = _scopeFactory.CreateScope())
         {
             var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
             var latestMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
-            .Include(mpi => mpi.PingInfos)
-            .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
+     .Where(w => w.Enabled && w.MonitorIPID == monitorIPID && w.DataSetID == dataSetID)
+     .Include(mpi => mpi.PingInfos)
+     .FirstOrDefaultAsync();
+
             if (latestMonitorPingInfo == null) return null;
 
             int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
@@ -126,17 +110,19 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfoNotWorking(int monitorIPID
             if (additionalPingInfosNeeded > 0)
             {
                 int previousDataSetID;
-                if (dataSetID == 0) { 
-                    previousDataSetID = await monitorContext.MonitorPingInfos.AsNoTracking().MaxAsync(mpi => mpi.DataSetID); 
-                    }
+                if (dataSetID == 0)
+                {
+                    previousDataSetID = await monitorContext.MonitorPingInfos.AsNoTracking().MaxAsync(mpi => mpi.DataSetID);
+                }
                 else
                 {
                     previousDataSetID = dataSetID--;
                 }
 
                 var previousMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
+                .Where(w => w.Enabled && w.MonitorIPID == monitorIPID && w.DataSetID == previousDataSetID)
                     .Include(mpi => mpi.PingInfos)
-                    .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == previousDataSetID);
+                    .FirstOrDefaultAsync();
 
                 if (previousMonitorPingInfo != null)
                 {
@@ -158,7 +144,21 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfoNotWorking(int monitorIPID
         }
 
     }
-    public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID,  int dataSetID)
+
+    public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int dataSetID)
+    {
+        var cachedResult = _cachedMonitorPingInfos.FirstOrDefault(mpi =>
+                            mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
+        if (cachedResult != null)
+        {
+            // Adjust if windowSize filtering is needed
+            return cachedResult;
+        }
+
+        return await GetDBMonitorPingInfo(monitorIPID, dataSetID);
+
+    }
+    public async Task<MonitorPingInfo?> GetDBMonitorPingInfo(int monitorIPID, int dataSetID)
     {
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -171,8 +171,8 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfoNotWorking(int monitorIPID
         }
 
     }
-  
-  
+
+
     public async Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs()
     {
         using (var scope = _scopeFactory.CreateScope())
@@ -181,13 +181,13 @@ public async Task<MonitorPingInfo?> GetMonitorPingInfoNotWorking(int monitorIPID
 
             // Assuming you want to fetch MonitorPingInfos based on a certain condition
             // This example fetches all MonitorPingInfos, but you should adjust the Where clause as needed
-           var startOfYear2024 = new DateTime(2024, 1, 1);
+            var startOfYear2024 = new DateTime(2024, 1, 1);
 
-var monitorPingInfos = await monitorContext.MonitorPingInfos
-    .Where(mpi => mpi.DateEnded >= startOfYear2024 && 
-                  monitorContext.PingInfos.Count(pi => pi.MonitorPingInfoID == mpi.ID) > 100)
-    .Select(mpi => new { mpi.MonitorIPID, mpi.DataSetID })
-    .ToListAsync();
+            var monitorPingInfos = await monitorContext.MonitorPingInfos
+                .Where(mpi => mpi.DateEnded >= startOfYear2024 &&
+                              monitorContext.PingInfos.Count(pi => pi.MonitorPingInfoID == mpi.ID) > 100)
+                .Select(mpi => new { mpi.MonitorIPID, mpi.DataSetID })
+                .ToListAsync();
 
 
 
@@ -200,7 +200,7 @@ var monitorPingInfos = await monitorContext.MonitorPingInfos
     }
 
 
-    public async Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID)
+  /*  public async Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID)
     {
         using (var scope = _scopeFactory.CreateScope())
         {
@@ -217,7 +217,60 @@ var monitorPingInfos = await monitorContext.MonitorPingInfos
             return localPingInfos;
         }
 
+    }*/
+
+    public ResultObj UpdateMonitorPingInfo(MonitorPingInfo updatedMonitorPingInfo)
+    {
+        var result = new ResultObj();
+        if (_cachedMonitorPingInfos == null)
+        {
+            result.Success = false;
+            result.Message = " Error : Cache MonitorPingInfos is null";
+            return result;
+        }
+        // 1. Find in cache
+        var cachedMonitorPingInfo = _cachedMonitorPingInfos?.FirstOrDefault(mpi =>
+                             mpi.MonitorIPID == updatedMonitorPingInfo.MonitorIPID && mpi.DataSetID == updatedMonitorPingInfo.DataSetID);
+
+        if (cachedMonitorPingInfo == null)
+        {
+            _cachedMonitorPingInfos!.Add(updatedMonitorPingInfo);
+            result.Success = true;
+            result.Message = " Success : Added new MonitorPingInfo ";
+            return result;
+        }
+
+        // 2. Update properties from the passed 'updatedMonitorPingInfo'
+        cachedMonitorPingInfo.CopyMonitorPingInfo(updatedMonitorPingInfo, false);
+
+        // 3. Manage PingInfos
+        ManagePingInfos(cachedMonitorPingInfo, updatedMonitorPingInfo.PingInfos);
+        result.Success = true;
+        result.Message = " Success : Updated MonitorPingInfo ";
+
+        return result;
     }
+
+    // Helper method for managing PingInfos
+    private void ManagePingInfos(MonitorPingInfo cachedMonitorPingInfo, List<PingInfo> updatedPingInfos)
+    {
+
+        // 1. Build a set of existing DateSentInt values:
+        var existingDateSents = new HashSet<uint>(cachedMonitorPingInfo.PingInfos.Select(pi => pi.DateSentInt));
+
+        // 2. Filter updatedPingInfos to remove duplicates:
+        var newPingInfos = updatedPingInfos.Where(pi => !existingDateSents.Contains(pi.DateSentInt)).ToList();
+
+        // 3. Remove oldest if necessary:
+        while (cachedMonitorPingInfo.PingInfos.Count + newPingInfos.Count > _windowSize)
+        {
+            cachedMonitorPingInfo.PingInfos.RemoveAt(0); // Remove oldest
+        }
+
+        // 4. Add the filtered new PingInfos:
+        cachedMonitorPingInfo.PingInfos.AddRange(newPingInfos);
+    }
+
 
     public async Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus)
     {
@@ -245,7 +298,7 @@ var monitorPingInfos = await monitorContext.MonitorPingInfos
                 // Update the MonitorPingInfo object with the prediction results
                 if (monitorPingInfo.PredictStatus == null)
                 {
-                    predictStatus.MonitorPingInfoID=monitorPingInfo.ID;
+                    predictStatus.MonitorPingInfoID = monitorPingInfo.ID;
                     monitorContext.PredictStatuses.Add(predictStatus);
                     await monitorContext.SaveChangesAsync();
                 }

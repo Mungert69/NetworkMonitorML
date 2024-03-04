@@ -437,15 +437,15 @@ public class MonitorMLService : IMonitorMLService
 
     public async Task<List<LocalPingInfo>> TrainForHost(int monitorIPID)
     {
-        //var localPingInfos = new List<LocalPingInfo>();
+        var localPingInfos = new List<LocalPingInfo>();
 
-        var localPingInfos = await _monitorMLDataRepo.GetLocalPingInfosForHost(monitorIPID);
+        //var localPingInfos = await _monitorMLDataRepo.GetLocalPingInfosForHost(monitorIPID);
 
-        if (localPingInfos.Count > 0)
+        /*if (localPingInfos.Count > 0)
         {
             //_mlModel.Train(localPingInfos);
             _logger.LogDebug($"MLSERVICE : Training PingInfo Data for host {monitorIPID}.");
-        }
+        }*/
 
         return localPingInfos;
     }
