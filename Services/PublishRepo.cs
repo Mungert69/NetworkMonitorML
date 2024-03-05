@@ -79,9 +79,7 @@ namespace NetworkMonitor.ML.Repository
                     {
                         if (f.PredictStatus == null)
                         {
-                            result.Success = false;
-                            result.Message += " Error : PredictStatus is missing from MonitorPingInfo ";
-                            return result;
+                            continue;
                         }
 
                         f.DateEnded = DateTime.UtcNow;

@@ -274,7 +274,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         }
 
         // 2. Update properties from the passed 'updatedMonitorPingInfo'
-        cachedMonitorPingInfo.CopyMonitorPingInfo(updatedMonitorPingInfo, false);
+        cachedMonitorPingInfo.CopyForPredict(updatedMonitorPingInfo);
 
         // 3. Manage PingInfos
         ManagePingInfos(cachedMonitorPingInfo, updatedMonitorPingInfo.PingInfos);

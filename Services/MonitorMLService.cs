@@ -62,6 +62,7 @@ public class MonitorMLService : IMonitorMLService
     private readonly IMonitorMLDataRepo _monitorMLDataRepo;
     private SystemParams _systemParams;
     private MLParams _mlParams;
+    private bool _isRunning;
 
     private DeviationAnalyzer _deviationAnalyzer = new DeviationAnalyzer(10, 1);
 
@@ -163,7 +164,7 @@ public class MonitorMLService : IMonitorMLService
         {
             // Assuming there's a method to get the latest MonitorPingInfos with a specified window size
             // This method needs to be implemented in the IMonitorMLDataRepo and MonitorMLDataRepo
-
+            _isRunning = true;
             var latestMonitorPingInfos = await _monitorMLDataRepo.GetLatestMonitorPingInfos(_mlParams.PredictWindow);
 
             if (latestMonitorPingInfos == null || !latestMonitorPingInfos.Any())
@@ -206,6 +207,7 @@ public class MonitorMLService : IMonitorMLService
 
         if (result.Success) _logger.LogInformation(result.Message);
         else _logger.LogError(result.Message);
+        _isRunning = false;
         return result;
     }
 
@@ -621,7 +623,9 @@ public class MonitorMLService : IMonitorMLService
         ResultObj result = new ResultObj();
         result.Success = false;
         result.Message = "Service : UpdatePingInfos : For Processor AuthID "+processorDataObj.AppID;
-
+        if (_isRunning) {
+            //TODO queue the Update until _isRunning=false
+        }
         try
         {
             if (processorDataObj.MonitorPingInfos != null)
