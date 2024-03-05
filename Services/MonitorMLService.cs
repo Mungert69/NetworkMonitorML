@@ -82,10 +82,17 @@ public class MonitorMLService : IMonitorMLService
         _rabbitRepo = rabbitRepo;
         _systemParams = systemParamsHelper.GetSystemParams();
         _mlParams = systemParamsHelper.GetMLParams();
+        Init().Wait();
     }
     public async Task Init()
     {
-        //await CheckLatestHosts();
+        try
+        {
+            await _monitorMLDataRepo.GetLatestMonitorPingInfos(_mlParams.PredictWindow);
+        }
+        catch (Exception e) {
+            _logger.LogCritical($" Error : unable to init Service . Error was : {e.Message}");
+        }
     }
     private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence, int preTrain)
     {
@@ -621,12 +628,15 @@ public class MonitorMLService : IMonitorMLService
             {
                 foreach (var monitorPingInfo in processorDataObj.MonitorPingInfos)
                 {
-                    monitorPingInfo.PingInfos = processorDataObj.PingInfos.Where(w => w.MonitorPingInfoID == monitorPingInfo.MonitorIPID).ToList();
+                    monitorPingInfo.PingInfos = processorDataObj.PingInfos.Where(w => w.MonitorPingInfoID == monitorPingInfo.ID).ToList();
                     monitorPingInfo.DataSetID = 0;
                     var updateResult = _monitorMLDataRepo.UpdateMonitorPingInfo(monitorPingInfo);
-                    if (!updateResult.Success) return result;
+
+                    if (!updateResult.Success) {
+                        result.Message += updateResult.Message;
+                        return result; }
                 }
-                 result.Message += $" Success : updated {processorDataObj.MonitorPingInfos.Count} MonitorPingInfos .";
+                 result.Message += $" Success : updated {processorDataObj.MonitorPingInfos.Count} MonitorPingInfos , {processorDataObj.PingInfos.Count} PingInfos.";
            
             }
                 
