@@ -63,6 +63,12 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             FuncName = "mlCheckLatestHosts",
             MessageTimeout = 60000
         });
+         _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "predictPingInfos",
+            FuncName = "predictPingInfos",
+            MessageTimeout = 60000
+        });
 
     }
     protected override ResultObj DeclareConsumers()
@@ -133,6 +139,21 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     catch (Exception ex)
                     {
                         _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckLatestHosts " + ex.Message);
+                    }
+                };
+                    break;
+                    case "predictPingInfos":
+                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.Received +=  (model, ea) =>
+                {
+                    try
+                    {
+                        result = UpdatePingInfos(ConvertToObject<ProcessorDataObj>(model, ea));
+                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictPingInfos " + ex.Message);
                     }
                 };
                     break;
@@ -219,6 +240,29 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         return result;
     }
-
+public  ResultObj UpdatePingInfos(ProcessorDataObj? processorDataObj)
+    {
+        ResultObj result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : UpdatePingInfos : ";
+        if (processorDataObj == null)
+        {
+            result.Message += " Error : processorDataObj is null.";
+            return result;
+        }
+        try
+        {
+            result = _mlService.UpdatePingInfos(processorDataObj);
+            _logger.LogInformation(result.Message);
+        }
+        catch (Exception e)
+        {
+            result.Data = null;
+            result.Success = false;
+            result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+            _logger.LogError(result.Message);
+        }
+        return result;
+    }
 
 }

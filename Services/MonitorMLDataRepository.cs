@@ -20,6 +20,8 @@ public interface IMonitorMLDataRepo
     Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus);
     Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs();
     Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSize);
+    void RemoveMonitorPingInfos(List<int> monitorIPIDs);
+    ResultObj UpdateMonitorPingInfo(MonitorPingInfo updatedMonitorPingInfo);
 }
 
 public class MonitorMLDataRepo : IMonitorMLDataRepo
@@ -224,6 +226,23 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
       }*/
 
+    public void RemoveMonitorPingInfos(List<int> monitorIPIDs)
+    {
+        if (monitorIPIDs != null && monitorIPIDs.Count() != 0)
+        {
+            var removeMonitorPingInfos = _cachedMonitorPingInfos
+                                         .Where(w => monitorIPIDs.Contains(w.MonitorIPID) && w.DataSetID == 0)
+                                         .ToList();
+
+            foreach (var itemToRemove in removeMonitorPingInfos)
+            {
+                _cachedMonitorPingInfos.Remove(itemToRemove);
+            }
+        }
+    }
+
+
+
     public ResultObj UpdateMonitorPingInfo(MonitorPingInfo updatedMonitorPingInfo)
     {
         var result = new ResultObj();
@@ -314,7 +333,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                     monitorPingInfo.PredictStatus.EventTime = predictStatus.EventTime;
                     monitorPingInfo.PredictStatus.Message = predictStatus.Message;
                 }
-                    await monitorContext.SaveChangesAsync();
+                await monitorContext.SaveChangesAsync();
                 /*// Assuming PredictStatus can directly store the DetectionResult objects
                 monitorPingInfo.PredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
                 monitorPingInfo.PredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;

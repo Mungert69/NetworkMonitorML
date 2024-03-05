@@ -33,6 +33,8 @@ public interface IMonitorMLService
     Task<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>> CheckHost(int monitorIPID, int dataSetID);
     Task<TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>> CheckLatestHostsTest();
     Task<ResultObj> CheckLatestHosts();
+    ResultObj UpdatePingInfos(ProcessorDataObj processorDataObj);
+
     int PredictWindow { get; set; }
     int MartingaleDetectionThreshold { get; set; }
     int SpikeDetectionThreshold { get; set; }
@@ -607,6 +609,46 @@ public class MonitorMLService : IMonitorMLService
         return result;
     }
 
+ public  ResultObj UpdatePingInfos(ProcessorDataObj processorDataObj)
+    {
+        ResultObj result = new ResultObj();
+        result.Success = false;
+        result.Message = "Service : UpdatePingInfos : ";
+
+        try
+        {
+            if (processorDataObj.MonitorPingInfos != null)
+            {
+                foreach (var monitorPingInfo in processorDataObj.MonitorPingInfos)
+                {
+                    monitorPingInfo.PingInfos = processorDataObj.PingInfos.Where(w => w.MonitorPingInfoID == monitorPingInfo.MonitorIPID).ToList();
+                    monitorPingInfo.DataSetID = 0;
+                    _monitorMLDataRepo.UpdateMonitorPingInfo(monitorPingInfo);
+                }
+                result.Message += $" Success : updated {processorDataObj.MonitorPingInfos.Count} cached  MonitorPingInfos ";
+            }
+
+            if (processorDataObj.RemoveMonitorPingInfoIDs != null && processorDataObj.RemoveMonitorPingInfoIDs.Count != 0)
+            {
+                _monitorMLDataRepo.RemoveMonitorPingInfos(processorDataObj.RemoveMonitorPingInfoIDs);
+                result.Message += $" Success : removed {processorDataObj.RemoveMonitorPingInfoIDs.Count} MonitorPingInfos .";
+            }
+
+
+            result.Success = true;
+
+
+            _logger.LogInformation(result.Message);
+        }
+        catch (Exception e)
+        {
+            result.Data = null;
+            result.Success = false;
+            result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+            _logger.LogError(result.Message);
+        }
+        return result;
+    }
 }
 
 
