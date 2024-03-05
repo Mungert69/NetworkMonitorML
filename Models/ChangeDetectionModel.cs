@@ -127,13 +127,12 @@ namespace NetworkMonitor.ML.Model
 
                 var iidChangePointEstimator = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: _confidence, changeHistoryLength: _preTrain);
 
-                var emptyDataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
-                var iidChangePointTransform = iidChangePointEstimator.Fit(emptyDataView);
-
+                //var emptyDataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
                 var dataView = _mlContext.Data.LoadFromEnumerable(inputs);
+                var iidChangePointTransform = iidChangePointEstimator.Fit(dataView);
                 IDataView transformedData = iidChangePointTransform.Transform(dataView);
                 var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false);
-                _mlContext.Model.Save(iidChangePointTransform, emptyDataView.Schema, _modelPath);
+                _mlContext.Model.Save(iidChangePointTransform, dataView.Schema, _modelPath);
     
                 return predictions;
             }
