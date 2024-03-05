@@ -609,11 +609,11 @@ public class MonitorMLService : IMonitorMLService
         return result;
     }
 
- public  ResultObj UpdatePingInfos(ProcessorDataObj processorDataObj)
+    public ResultObj UpdatePingInfos(ProcessorDataObj processorDataObj)
     {
         ResultObj result = new ResultObj();
         result.Success = false;
-        result.Message = "Service : UpdatePingInfos : ";
+        result.Message = "Service : UpdatePingInfos : For Processor AuthID "+processorDataObj.AppID;
 
         try
         {
@@ -623,15 +623,23 @@ public class MonitorMLService : IMonitorMLService
                 {
                     monitorPingInfo.PingInfos = processorDataObj.PingInfos.Where(w => w.MonitorPingInfoID == monitorPingInfo.MonitorIPID).ToList();
                     monitorPingInfo.DataSetID = 0;
-                    _monitorMLDataRepo.UpdateMonitorPingInfo(monitorPingInfo);
+                    var updateResult = _monitorMLDataRepo.UpdateMonitorPingInfo(monitorPingInfo);
+                    if (!updateResult.Success) return result;
                 }
-                result.Message += $" Success : updated {processorDataObj.MonitorPingInfos.Count} cached  MonitorPingInfos ";
+                 result.Message += $" Success : updated {processorDataObj.MonitorPingInfos.Count} MonitorPingInfos .";
+           
             }
+                
 
             if (processorDataObj.RemoveMonitorPingInfoIDs != null && processorDataObj.RemoveMonitorPingInfoIDs.Count != 0)
             {
-                _monitorMLDataRepo.RemoveMonitorPingInfos(processorDataObj.RemoveMonitorPingInfoIDs);
-                result.Message += $" Success : removed {processorDataObj.RemoveMonitorPingInfoIDs.Count} MonitorPingInfos .";
+                bool resultFlag = _monitorMLDataRepo.RemoveMonitorPingInfos(processorDataObj.RemoveMonitorPingInfoIDs);
+                if (resultFlag) result.Message += $" Success : removed {processorDataObj.RemoveMonitorPingInfoIDs.Count} MonitorPingInfos .";
+                else
+                {
+                    result.Success = false;
+                    result.Message += " Error : could not remove MonitorPingInfos Data is not ready wait for 5 mins then try again .";
+                }
             }
 
 

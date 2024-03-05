@@ -20,7 +20,7 @@ public interface IMonitorMLDataRepo
     Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus);
     Task<List<(int monitorIPID, int dataSetID)>> GetMonitorIPIDDataSetIDs();
     Task<List<MonitorPingInfo>> GetLatestMonitorPingInfos(int windowSize);
-    void RemoveMonitorPingInfos(List<int> monitorIPIDs);
+    bool RemoveMonitorPingInfos(List<int> monitorIPIDs);
     ResultObj UpdateMonitorPingInfo(MonitorPingInfo updatedMonitorPingInfo);
 }
 
@@ -29,6 +29,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     private readonly IServiceScopeFactory _scopeFactory;
     private ILogger _logger;
     private int _windowSize;
+    private bool _isDataFull=false;
     private List<MonitorPingInfo> _cachedMonitorPingInfos = new List<MonitorPingInfo>();
 
     public MonitorMLDataRepo(ILogger<MonitorMLDataRepo> logger, IServiceScopeFactory scopeFactory)
@@ -43,6 +44,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         if (_cachedMonitorPingInfos == null || _cachedMonitorPingInfos.Count == 0)
         {
             _cachedMonitorPingInfos = await GetDBLatestMonitorPingInfos(windowSize);
+            _isDataFull = true;
         }
 
         return _cachedMonitorPingInfos
@@ -226,8 +228,9 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
       }*/
 
-    public void RemoveMonitorPingInfos(List<int> monitorIPIDs)
+    public bool RemoveMonitorPingInfos(List<int> monitorIPIDs)
     {
+        if (!_isDataFull) return false;
         if (monitorIPIDs != null && monitorIPIDs.Count() != 0)
         {
             var removeMonitorPingInfos = _cachedMonitorPingInfos
@@ -239,6 +242,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                 _cachedMonitorPingInfos.Remove(itemToRemove);
             }
         }
+        return true;
     }
 
 
@@ -250,6 +254,11 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         {
             result.Success = false;
             result.Message = " Error : Cache MonitorPingInfos is null";
+            return result;
+        }
+         if (!_isDataFull)  {
+            result.Success = false;
+            result.Message = " Error : Data is not yet full. Please wait.";
             return result;
         }
         // 1. Find in cache
