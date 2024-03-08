@@ -287,7 +287,7 @@ public class MonitorMLService : IMonitorMLService
             return analysisFeedback;
         }
 
-        if (isChangeDetected || isSpikeDetected)
+        if (isChangeDetected && isSpikeDetected)
         {
             analysisFeedback += "Possible issues detected. ";
             if (isChangeDetected)
