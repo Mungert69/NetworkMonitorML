@@ -5,29 +5,74 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Collections.Generic;
-namespace NetworkMonitor.Service.Services;
-public class LLMService
+
+
+
+
+namespace NetworkMonitor.ML.Services;
+// LLMService.cs
+public interface ILLMService
 {
-    enum ResponseState { Initial, AwaitingInput, FunctionCallProcessed } 
+    Task StartProcess(string modelPath);
+    Task<string> SendInputAndGetResponse(string userInput);
+}
 
-    private Process _llamaProcess; // Member to hold the LLM process instance
+public class LLMService : ILLMService
+{
+    private readonly ILLMProcessRunner _processRunner;
+    private readonly ILLMResponseProcessor _responseProcessor;
 
-    public async Task StartProcess(string modelPath, /* other options */)
+    public LLMService(ILLMProcessRunner processRunner, ILLMResponseProcessor responseProcessor)
     {
-        // ... same as before ...
-        // Create and configure the process in the constructor
-        _llamaProcess = new Process();
-        _llamaProcess.StartInfo.FileName = "~/code/llama.cpp/build/bin/main";
-        _llamaProcess.StartInfo.Arguments = "-c 6000 -m ~/code/models/natural-functions.Q8_0.gguf -ins --prompt-cache context.gguf --prompt-cache-ro --keep -1 -f initialPrompt.txt";
+        _processRunner = processRunner;
+        _responseProcessor = responseProcessor;
+    }
 
+    public async Task StartProcess(string modelPath)
+    {
+        await _processRunner.StartProcess(modelPath);
+    }
+
+    public async Task<string> SendInputAndGetResponse(string userInput)
+    {
+        return await _processRunner.SendInputAndGetResponse(userInput, _responseProcessor);
+    }
+}
+
+// LLMProcessRunner.cs
+public interface ILLMProcessRunner
+{
+    Task StartProcess(string modelPath);
+    Task<string> SendInputAndGetResponse(string userInput, ILLMResponseProcessor responseProcessor);
+}
+
+public class LLMProcessRunner : ILLMProcessRunner
+{
+    private ProcessWrapper _llamaProcess;
+
+    public LLMProcessRunner(ProcessWrapper? process, bool setStartInfo = true)
+    {
+        if (process == null) _llamaProcess = new ProcessWrapper();
+        else _llamaProcess = process;
+        if (setStartInfo) SetStartInfo();
+    }
+
+    public void SetStartInfo()
+    {
+        _llamaProcess.StartInfo.FileName = "~/code/llama.cpp/build/bin/main";
+        _llamaProcess.StartInfo.Arguments = "-c 6000  -m ~/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache context.gguf --prompt-cache-ro  -f initialPrompt.txt --color -r \"User:\" --in-prefix \" \" -ins --keep -1 --temp 0";
         _llamaProcess.StartInfo.UseShellExecute = false;
         _llamaProcess.StartInfo.RedirectStandardInput = true;
         _llamaProcess.StartInfo.RedirectStandardOutput = true;
         _llamaProcess.StartInfo.CreateNoWindow = true;
-
+    }
+    public async Task StartProcess(string modelPath)
+    {
+        if (_llamaProcess == null)
+        {
+            throw new InvalidOperationException("LLM process is not initialized");
+        }
         _llamaProcess.Start();
-
-        // Wait for the "ready" signal
         await WaitForReadySignal();
     }
 
@@ -50,94 +95,120 @@ public class LLMService
         }
     }
 
-   
-   
-public async Task<string> SendInputAndGetResponse(string userInput)
-{
-    if (_llamaProcess == null || _llamaProcess.HasExited)
+    public async Task<string> SendInputAndGetResponse(string userInput, ILLMResponseProcessor responseProcessor)
     {
-        throw new InvalidOperationException("LLM process is not running");
-    }
-
-    // Send input to the LLM process
-    await _llamaProcess.StandardInput.WriteLineAsync(userInput);
-    await _llamaProcess.StandardInput.FlushAsync();
-
-    var responseBuilder = new StringBuilder();
-    string line;
-    var state = ResponseState.Initial;
-
-    while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
-    {
-        responseBuilder.AppendLine(line);
-
-        if (state == ResponseState.Initial && line.StartsWith(">"))
+        if (_llamaProcess == null || _llamaProcess.HasExited)
         {
-            state = ResponseState.AwaitingInput;
+            throw new InvalidOperationException("LLM process is not running");
         }
-        else if (state == ResponseState.AwaitingInput) 
+
+        await _llamaProcess.StandardInput.WriteLineAsync(userInput);
+        await _llamaProcess.StandardInput.FlushAsync();
+
+        var responseBuilder = new StringBuilder();
+        await responseProcessor.ProcessLLMOutput(userInput);
+        string line;
+        var state = ResponseState.Initial;
+
+        while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
         {
-            if (IsFunctionCallResponse(line))
+            // build non prompt or json lines
+            if (!line.StartsWith("{")) responseBuilder.AppendLine(line);
+
+            if (state == ResponseState.Initial && line.StartsWith(">"))
             {
-                await ProcessFunctionCall(line);
-                state = ResponseState.FunctionCallProcessed;
-            }
-            else if (line.StartsWith(">")) // End of non-function-call response
-            {
-                await ProcessLLMOutput(responseBuilder.ToString());
-                responseBuilder.Clear();  
+                // first line with user input is ignored ?
                 state = ResponseState.AwaitingInput;
-            } 
-            // else (accumulate lines while waiting for response end)
+            }
+            else if (state == ResponseState.AwaitingInput)
+            {
+                if (responseProcessor.IsFunctionCallResponse(line))
+                {
+                    // call function send user llm output
+                    responseBuilder.Append($"Calling Function : {line}");
+                    var str = responseBuilder.ToString();
+                    await responseProcessor.ProcessLLMOutput(str);
+                    responseBuilder.Clear();
+                    await responseProcessor.ProcessFunctionCall(line);
+                    state = ResponseState.FunctionCallProcessed;
+                }
+                else if (line.StartsWith(">"))
+                {
+                    // back to prompt finshed.
+                    var str = responseBuilder.ToString();
+                    await responseProcessor.ProcessLLMOutput(str);
+                    responseBuilder.Clear();
+                    state = ResponseState.Completed;
+                }
+            }
+            else if (state == ResponseState.FunctionCallProcessed)
+            {
+                // after function call
+                var str = responseBuilder.ToString();
+                await responseProcessor.ProcessLLMOutput(str);
+                responseBuilder.Clear();
+                state = ResponseState.AwaitingInput;
+            }
         }
-        else if (state == ResponseState.FunctionCallProcessed)
-        {
-            await ProcessLLMOutput(responseBuilder.ToString());
-            responseBuilder.Clear();
-            state = ResponseState.AwaitingInput; 
-        }
+
+        return string.Empty;
     }
-
-    return ""; // Response was already processed
 }
 
-private async Task ProcessLLMOutput(string output)
+// LLMResponseProcessor.cs
+public interface ILLMResponseProcessor
 {
-    //  You might want to display this output directly to the user 
-    Console.WriteLine(output); 
+    Task ProcessLLMOutput(string output);
+    Task ProcessFunctionCall(string jsonStr);
+    bool IsFunctionCallResponse(string input);
 }
 
-  
-private async Task ProcessLLMResponse(string completeResponse)
+public class LLMResponseProcessor : ILLMResponseProcessor
 {
-    // Check for JSON function call instructions (updated logic might be needed)
-    if (IsFunctionCallResponse(completeResponse)) 
+    private readonly IFunctionExecutor _functionExecutor;
+
+    public LLMResponseProcessor(IFunctionExecutor functionExecutor)
     {
-        await ProcessFunctionCall(completeResponse);
+        _functionExecutor = functionExecutor;
     }
-    // ... other logic to handle non-function call responses
-}
 
-    private bool IsFunctionCallResponse(string input)
+    public Task ProcessLLMOutput(string output)
+    {
+        Console.WriteLine(output);
+        return Task.CompletedTask;
+    }
+
+    public async Task ProcessFunctionCall(string jsonStr)
+    {
+        var functionCallData = JsonSerializer.Deserialize<FunctionCallData>(jsonStr);
+        await _functionExecutor.ExecuteFunction(functionCallData);
+    }
+
+    public bool IsFunctionCallResponse(string input)
     {
         try
         {
-            var jsonElement= JsonDocument.Parse(input).RootElement;
+            var jsonElement = JsonDocument.Parse(input).RootElement;
             return jsonElement.TryGetProperty("name", out _);
         }
         catch (JsonException)
         {
-            return false; // Not a valid JSON function call instruction
+            return false;
         }
     }
+}
 
-    private async Task ProcessFunctionCall(string jsonStr)
+// FunctionExecutor.cs
+public interface IFunctionExecutor
+{
+    Task ExecuteFunction(FunctionCallData functionCallData);
+}
+
+public class FunctionExecutor : IFunctionExecutor
+{
+    public async Task ExecuteFunction(FunctionCallData functionCallData)
     {
-        var functionCallData = JsonSerializer.Deserialize<FunctionCallData>(jsonStr);
-
-        // Implement logic to execute the function based on functionCallData.functionName
-        // You might use reflection or a switch-case statement for this.
-        switch (functionCallData.functionName)
+        switch (functionCallData.name)
         {
             case "AddHostGPTDefault":
                 await CallAddHostFunction(functionCallData.parameters);
@@ -149,32 +220,143 @@ private async Task ProcessLLMResponse(string completeResponse)
                 await CallGetHostDataFunction(functionCallData.parameters);
                 break;
             default:
-                Console.WriteLine("Unknown function: " + functionCallData.functionName); 
-                break; 
+                Console.WriteLine("Unknown function: " + functionCallData.name);
+                break;
         }
     }
 
-    // Placeholder function implementations - You'll need to replace these!
     private async Task CallAddHostFunction(Dictionary<string, string> parameters)
-    { 
-        // Implement your actual host adding logic with parameters
+    {
+        Console.WriteLine("Add host function called with parameters:");
+        foreach (var kvp in parameters)
+        {
+            Console.WriteLine($"{kvp.Key}: {kvp.Value}");
+        }
     }
 
-    private async Task CallEditHostFunction(Dictionary<string, string> parameters) 
-    { 
-        // Implement your actual host editing logic with parameters
+    private async Task CallEditHostFunction(Dictionary<string, string> parameters)
+    {
+        Console.WriteLine("Edit host function called with parameters:");
+        foreach (var kvp in parameters)
+        {
+            Console.WriteLine($"{kvp.Key}: {kvp.Value}");
+        }
     }
 
-    private async Task CallGetHostDataFunction(Dictionary<string, string> parameters) 
-    { 
-        // Implement your actual host data retrieval logic with parameters
+    private async Task CallGetHostDataFunction(Dictionary<string, string> parameters)
+    {
+        Console.WriteLine("Get host data function called with parameters:");
+        foreach (var kvp in parameters)
+        {
+            Console.WriteLine($"{kvp.Key}: {kvp.Value}");
+        }
     }
 }
 
 // Helper class to represent the deserialized JSON
 public class FunctionCallData
 {
-    public string functionName { get; set; }
-    public Dictionary<string, string> parameters { get; set; } 
+    public string name { get; set; }
+    public Dictionary<string, string> parameters { get; set; }
+}
+
+public enum ResponseState { Initial, AwaitingInput, FunctionCallProcessed, Completed }
+
+public class ProcessWrapper
+{
+    private Process _process;
+
+    public ProcessWrapper()
+    {
+        _process = new Process();
+
+    }
+
+    public ProcessWrapper(Process? process = null)
+    {
+        if (process == null) _process = new Process();
+        else _process = process;
+    }
+
+    public virtual IStreamWriter StandardInput => new StreamWriterWrapper(_process.StandardInput);
+    public virtual IStreamReader StandardOutput => new StreamReaderWrapper(_process.StandardOutput);
+
+
+    public virtual ProcessStartInfo StartInfo => _process.StartInfo;
+
+    public virtual bool HasExited => _process.HasExited;
+
+    public virtual void Start()
+    {
+        _process.Start();
+    }
+
+    public virtual Task<string> StandardOutputReadLineAsync()
+    {
+        return _process.StandardOutput.ReadLineAsync();
+    }
+
+    public virtual Task StandardInputWriteLineAsync(string input)
+    {
+        return _process.StandardInput.WriteLineAsync(input);
+    }
+
+    public virtual Task StandardInputFlushAsync()
+    {
+        return _process.StandardInput.FlushAsync();
+    }
+
+    // Add any other methods or properties you need to mock
+}
+
+public interface IStreamReader
+{
+    Task<string> ReadLineAsync();
+    // Add other necessary methods from StreamReader
+}
+
+public interface IStreamWriter
+{
+    Task WriteLineAsync(string value);
+    Task FlushAsync();
+    // Add other necessary methods from StreamWriter
+}
+public class StreamReaderWrapper : IStreamReader
+{
+    private readonly StreamReader _innerStreamReader;
+
+    public StreamReaderWrapper(StreamReader streamReader)
+    {
+        _innerStreamReader = streamReader;
+    }
+
+    public Task<string> ReadLineAsync()
+    {
+        return _innerStreamReader.ReadLineAsync();
+    }
+
+    // Implement other methods from IStreamReader if needed
+}
+
+public class StreamWriterWrapper : IStreamWriter
+{
+    private readonly StreamWriter _innerStreamWriter;
+
+    public StreamWriterWrapper(StreamWriter streamWriter)
+    {
+        _innerStreamWriter = streamWriter;
+    }
+
+    public Task WriteLineAsync(string value)
+    {
+        return _innerStreamWriter.WriteLineAsync(value);
+    }
+
+    public Task FlushAsync()
+    {
+        return _innerStreamWriter.FlushAsync();
+    }
+
+    // Implement other methods from IStreamWriter if needed
 }
 
