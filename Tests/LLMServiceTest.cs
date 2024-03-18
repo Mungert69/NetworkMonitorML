@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Diagnostics;
+using Microsoft.Extensions.Logging;
 using System.Threading.Tasks;
 using Moq;
 using Xunit;
@@ -11,6 +12,17 @@ namespace NetworkMonitor.ML.Services;
 public class LLMProcessRunnerTests
 {
 
+    private readonly Mock<ILogger<LLMService>> _loggerLLMServiceMock;
+     private readonly Mock<ILogger<FunctionExecutor>> _loggerFunctionExecutorMock;
+      private readonly Mock<ILogger<LLMResponseProcessor>> _loggerLLMResponseProcessorMock;
+       private readonly Mock<ILogger<LLMProcessRunner>> _loggerLLMProcessRunnerMock;
+       public LLMProcessRunnerTests()
+        {
+            _loggerLLMServiceMock = new Mock<ILogger<LLMService>>();
+        _loggerFunctionExecutorMock = new Mock<ILogger<FunctionExecutor>>();
+        _loggerLLMProcessRunnerMock = new Mock<ILogger<LLMProcessRunner>>();
+        _loggerLLMResponseProcessorMock = new Mock<ILogger<LLMResponseProcessor>>();
+        }
 
     [Fact]
     public async Task StartProcess_ShouldStartProcessAndWaitForReadySignal()
@@ -23,8 +35,9 @@ public class LLMProcessRunnerTests
                    string line = ">";
                    return Task.FromResult(line);
                });
+                var mockResponseProcessor = new Mock<ILLMResponseProcessor>();
         mockProcessWrapper.Setup(p => p.Start());
-        var processRunner = new LLMProcessRunner(mockProcessWrapper.Object, false);
+        var processRunner = new LLMProcessRunner(_loggerLLMProcessRunnerMock.Object,mockResponseProcessor.Object,mockProcessWrapper.Object, false);
 
 
         // Act
@@ -76,10 +89,10 @@ public class LLMProcessRunnerTests
         mockResponseProcessor.Setup(p => p.ProcessLLMOutput(It.IsAny<string>()))
             .Returns(Task.CompletedTask);
 
-        var processRunner = new LLMProcessRunner(mockProcessWrapper.Object, false);
+        var processRunner = new LLMProcessRunner(_loggerLLMProcessRunnerMock.Object,mockResponseProcessor.Object,mockProcessWrapper.Object, false);
 
         // Act
-        await processRunner.SendInputAndGetResponse("> Add Host 192.168.1.1", mockResponseProcessor.Object);
+        await processRunner.SendInputAndGetResponse("> Add Host 192.168.1.1");
 
         // Assert
         mockProcessWrapper.Verify(p => p.StandardInput.WriteLineAsync("> Add Host 192.168.1.1"), Times.Once);

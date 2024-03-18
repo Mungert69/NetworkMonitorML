@@ -70,6 +70,11 @@ namespace NetworkMonitor.ML
             services.AddSingleton<IRabbitRepo, RabbitRepo>();
             services.AddSingleton<IFileRepo, FileRepo>();
             services.AddSingleton<ISystemParamsHelper, SystemParamsHelper>();
+            services.AddSingleton<IFunctionExecutor, FunctionExecutor>();
+             services.AddSingleton<ILLMResponseProcessor, LLMResponseProcessor>();
+             services.AddSingleton<ILLMService, LLMService>();
+             services.AddSingleton<ILLMProcessRunner, LLMProcessRunner>();
+
             services.AddSingleton(_cancellationTokenSource);
             services.Configure<HostOptions>(s => s.ShutdownTimeout = TimeSpan.FromMinutes(5));
             services.AddAsyncServiceInitialization()
@@ -80,6 +85,11 @@ namespace NetworkMonitor.ML
                  .AddInitAction<IRabbitListener>((rabbitListener) =>
                     {
                         return Task.CompletedTask;
+                    })
+                     .AddInitAction<ILLMService>(async (llmService) =>
+                    {
+                        await llmService.StartProcess("not set here");
+                        await llmService.SendInputAndGetResponse("Add Host 192.168.1.1");
                     });
         }
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

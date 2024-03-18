@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Collections.Generic;
-
+using Microsoft.Extensions.Logging;
 
 
 
@@ -19,13 +19,14 @@ public interface ILLMService
 
 public class LLMService : ILLMService
 {
+    private ILogger _logger;
     private readonly ILLMProcessRunner _processRunner;
-    private readonly ILLMResponseProcessor _responseProcessor;
+   // private readonly ILLMResponseProcessor _responseProcessor;
 
-    public LLMService(ILLMProcessRunner processRunner, ILLMResponseProcessor responseProcessor)
+    public LLMService(ILogger<LLMService> logger, ILLMProcessRunner processRunner)
     {
         _processRunner = processRunner;
-        _responseProcessor = responseProcessor;
+        _logger = logger;
     }
 
     public async Task StartProcess(string modelPath)
@@ -35,7 +36,7 @@ public class LLMService : ILLMService
 
     public async Task<string> SendInputAndGetResponse(string userInput)
     {
-        return await _processRunner.SendInputAndGetResponse(userInput, _responseProcessor);
+        return await _processRunner.SendInputAndGetResponse(userInput);
     }
 }
 
@@ -43,15 +44,27 @@ public class LLMService : ILLMService
 public interface ILLMProcessRunner
 {
     Task StartProcess(string modelPath);
-    Task<string> SendInputAndGetResponse(string userInput, ILLMResponseProcessor responseProcessor);
+    Task<string> SendInputAndGetResponse(string userInput);
 }
 
 public class LLMProcessRunner : ILLMProcessRunner
 {
     private ProcessWrapper _llamaProcess;
+    private ILogger _logger;
+    private ILLMResponseProcessor _responseProcessor;
 
-    public LLMProcessRunner(ProcessWrapper? process, bool setStartInfo = true)
+    public LLMProcessRunner(ILogger<LLMProcessRunner> logger, ILLMResponseProcessor responseProcessor)
     {
+                _logger = logger;
+        _responseProcessor = responseProcessor;
+        _llamaProcess = new ProcessWrapper();
+        SetStartInfo();
+
+    }
+    public LLMProcessRunner(ILogger<LLMProcessRunner> logger,ILLMResponseProcessor responseProcessor,ProcessWrapper? process, bool setStartInfo = true)
+    {
+                _logger = logger;
+                        _responseProcessor = responseProcessor;
         if (process == null) _llamaProcess = new ProcessWrapper();
         else _llamaProcess = process;
         if (setStartInfo) SetStartInfo();
@@ -59,8 +72,8 @@ public class LLMProcessRunner : ILLMProcessRunner
 
     public void SetStartInfo()
     {
-        _llamaProcess.StartInfo.FileName = "~/code/llama.cpp/build/bin/main";
-        _llamaProcess.StartInfo.Arguments = "-c 6000  -m ~/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache context.gguf --prompt-cache-ro  -f initialPrompt.txt --color -r \"User:\" --in-prefix \" \" -ins --keep -1 --temp 0";
+        _llamaProcess.StartInfo.FileName = "/home/mahadeva/code/llama.cpp/build/bin/main";
+        _llamaProcess.StartInfo.Arguments = "-c 6000  -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt --color -r \"User:\" --in-prefix \" \" -ins --keep -1 --temp 0";
         _llamaProcess.StartInfo.UseShellExecute = false;
         _llamaProcess.StartInfo.RedirectStandardInput = true;
         _llamaProcess.StartInfo.RedirectStandardOutput = true;
@@ -72,6 +85,7 @@ public class LLMProcessRunner : ILLMProcessRunner
         {
             throw new InvalidOperationException("LLM process is not initialized");
         }
+        _logger.LogInformation($" LLMService StartProcess()");
         _llamaProcess.Start();
         await WaitForReadySignal();
     }
@@ -80,7 +94,8 @@ public class LLMProcessRunner : ILLMProcessRunner
     {
         bool isReady = false;
         string line;
-        while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
+        await Task.Delay(10000);
+        /*while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
         {
             if (line.StartsWith(">"))
             {
@@ -92,11 +107,13 @@ public class LLMProcessRunner : ILLMProcessRunner
         if (!isReady)
         {
             throw new Exception("LLM process failed to indicate readiness");
-        }
+        }*/
+        _logger.LogInformation($" LLMService Process Started ");
     }
 
-    public async Task<string> SendInputAndGetResponse(string userInput, ILLMResponseProcessor responseProcessor)
+    public async Task<string> SendInputAndGetResponse(string userInput)
     {
+        _logger.LogInformation($"  LLMService : SendInputAndGetResponse() :");
         if (_llamaProcess == null || _llamaProcess.HasExited)
         {
             throw new InvalidOperationException("LLM process is not running");
@@ -106,12 +123,15 @@ public class LLMProcessRunner : ILLMProcessRunner
         await _llamaProcess.StandardInput.FlushAsync();
 
         var responseBuilder = new StringBuilder();
-        await responseProcessor.ProcessLLMOutput(userInput);
+        await _responseProcessor.ProcessLLMOutput(userInput);
+                                    _logger.LogInformation($" ProcessLLMOutput(user input) -> {userInput}");
         string line;
+
         var state = ResponseState.Initial;
 
         while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
         {
+            _logger.LogInformation($" Process -> {line}");
             // build non prompt or json lines
             if (!line.StartsWith("{")) responseBuilder.AppendLine(line);
 
@@ -122,21 +142,23 @@ public class LLMProcessRunner : ILLMProcessRunner
             }
             else if (state == ResponseState.AwaitingInput)
             {
-                if (responseProcessor.IsFunctionCallResponse(line))
+                if (_responseProcessor.IsFunctionCallResponse(line))
                 {
                     // call function send user llm output
                     responseBuilder.Append($"Calling Function : {line}");
                     var str = responseBuilder.ToString();
-                    await responseProcessor.ProcessLLMOutput(str);
+                    await _responseProcessor.ProcessLLMOutput(str);
+                            _logger.LogInformation($" ProcessLLMOutput(call_func) -> {str}");
                     responseBuilder.Clear();
-                    await responseProcessor.ProcessFunctionCall(line);
+                    await _responseProcessor.ProcessFunctionCall(line);
                     state = ResponseState.FunctionCallProcessed;
                 }
                 else if (line.StartsWith(">"))
                 {
                     // back to prompt finshed.
                     var str = responseBuilder.ToString();
-                    await responseProcessor.ProcessLLMOutput(str);
+                    await _responseProcessor.ProcessLLMOutput(str);
+                    _logger.LogInformation($" ProcessLLMOutput(back_to_prompt) -> {str}");
                     responseBuilder.Clear();
                     state = ResponseState.Completed;
                 }
@@ -145,7 +167,8 @@ public class LLMProcessRunner : ILLMProcessRunner
             {
                 // after function call
                 var str = responseBuilder.ToString();
-                await responseProcessor.ProcessLLMOutput(str);
+                await _responseProcessor.ProcessLLMOutput(str);
+                                            _logger.LogInformation($" ProcessLLMOutput(after_func_call) -> {str}");
                 responseBuilder.Clear();
                 state = ResponseState.AwaitingInput;
             }
