@@ -18,9 +18,9 @@ namespace NetworkMonitor.ML.Model
         private Trainer? _trainer;
         private Predictor _predictor;
         private MLContext _mlContext;
-        private string _basePath = "data";
+       // private string _basePath = "data";
 
-        public ChangeDetectionModel(int monitorPingInfoID, double confidence, int preTrain) : base(monitorPingInfoID)
+        public ChangeDetectionModel(int monitorPingInfoID, double confidence, int preTrain) : base(monitorPingInfoID, "data")
         {
             var modelPath = $"{_basePath}/model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();

@@ -2,6 +2,7 @@
 using Microsoft.ML;
 using System.Collections.Generic;
 using System;
+using System.IO;
 namespace NetworkMonitor.ML.Model;
 
 public abstract class MLModel : IMLModel
@@ -9,19 +10,30 @@ public abstract class MLModel : IMLModel
   private int _monitorPingInfoID;
   private double _confidence=95d;
   private int _preTrain;
+  protected string _basePath="data";
 
   public int MonitorPingInfoID { get => _monitorPingInfoID; }
     public double Confidence { get => _confidence; set => _confidence = value; }
     public int PreTrain { get => _preTrain; set => _preTrain = value; }
 
-    public MLModel(int monitorPingInfoID)
+    public MLModel(int monitorPingInfoID, string basePath="data")
   {
     _monitorPingInfoID = monitorPingInfoID;
+    _basePath = basePath;
+    EnsureBasePathExists();
   }
 
   public abstract void Train(List<LocalPingInfo> data);
   public abstract AnomalyPrediction Predict(LocalPingInfo input);
   public abstract IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs);
+
+    protected void EnsureBasePathExists()
+        {
+            if (!Directory.Exists(_basePath))
+            {
+                Directory.CreateDirectory(_basePath);
+            }
+        }
   public virtual void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
   {
     Console.WriteLine($"Confidence set at {Confidence}");

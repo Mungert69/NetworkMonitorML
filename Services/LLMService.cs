@@ -95,9 +95,9 @@ public class LLMProcessRunner : ILLMProcessRunner
         bool isReady = false;
         string line;
         await Task.Delay(10000);
-        /*while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
+        while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
         {
-            if (line.StartsWith(">"))
+            if (line.StartsWith("<|im_end|>"))
             {
                 isReady = true;
                 break;
@@ -107,7 +107,7 @@ public class LLMProcessRunner : ILLMProcessRunner
         if (!isReady)
         {
             throw new Exception("LLM process failed to indicate readiness");
-        }*/
+        }
         _logger.LogInformation($" LLMService Process Started ");
     }
 
@@ -124,7 +124,7 @@ public class LLMProcessRunner : ILLMProcessRunner
 
         var responseBuilder = new StringBuilder();
         await _responseProcessor.ProcessLLMOutput(userInput);
-                                    _logger.LogInformation($" ProcessLLMOutput(user input) -> {userInput}");
+        _logger.LogInformation($" ProcessLLMOutput(user input) -> {userInput}");
         string line;
 
         var state = ResponseState.Initial;

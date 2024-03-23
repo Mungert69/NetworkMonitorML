@@ -14,9 +14,9 @@ namespace NetworkMonitor.ML.Model
         private Trainer? _trainer;
         private Predictor _predictor;
         private MLContext _mlContext;
-        private string _basePath = "data";
 
-        public SpikeDetectionModel(int monitorPingInfoID, double confidence, int preTrain) : base(monitorPingInfoID)
+
+        public SpikeDetectionModel(int monitorPingInfoID, double confidence, int preTrain) : base(monitorPingInfoID, "data")
         {
             var modelPath = $"{_basePath}/spike_model_{monitorPingInfoID}.zip";
             _mlContext = new MLContext();
