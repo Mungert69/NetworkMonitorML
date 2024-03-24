@@ -94,7 +94,12 @@ public class LLMProcessRunner : ILLMProcessRunner
         }
         _logger.LogInformation($" LLMService Process Started ");
     }
-
+static string RemoveAnsiEscapeSequences(string input)
+    {
+        input=System.Text.RegularExpressions.Regex.Replace(input, @"\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]", "");
+          input = input.Replace("'", "");
+        return input;
+    }
     public async Task<string> SendInputAndGetResponse(LLMServiceObj serviceObj)
     {
         var responseServiceObj = new LLMServiceObj() { SessionId=serviceObj.SessionId};
@@ -120,7 +125,7 @@ public class LLMProcessRunner : ILLMProcessRunner
 
         while ((line = await process.StandardOutput.ReadLineAsync()) != null)
         {
-            _logger.LogInformation($" Process -> {line}");
+            //_logger.LogInformation($" Process -> {line}");
             // build non prompt or json lines
             if (!line.StartsWith("{")) responseBuilder.AppendLine(line);
 
@@ -131,7 +136,8 @@ public class LLMProcessRunner : ILLMProcessRunner
             }
             else if (state == ResponseState.AwaitingInput)
             {
-                if (_responseProcessor.IsFunctionCallResponse(line))
+                string cleanLine = RemoveAnsiEscapeSequences(line);
+                if (_responseProcessor.IsFunctionCallResponse(cleanLine))
                 {
                     // call function send user llm output
                     responseBuilder.Append($"Calling Function : {line}");
@@ -139,14 +145,16 @@ public class LLMProcessRunner : ILLMProcessRunner
                     responseServiceObj = new LLMServiceObj() { SessionId=serviceObj.SessionId};
                     responseServiceObj.LlmMessage = str;
                    await _responseProcessor.ProcessLLMOutput(responseServiceObj);
-                    _logger.LogInformation($" ProcessLLMOutput(call_func) -> {str}");
+                    _logger.LogInformation($" ProcessLLMOutput(call_func) -> {line}");
                     responseBuilder.Clear();
                     responseServiceObj = new LLMServiceObj() { SessionId=serviceObj.SessionId};
                     responseServiceObj.IsFunctionCall = true;
-                    responseServiceObj.JsonFunction = line;
+                    
+                    responseServiceObj.JsonFunction = cleanLine;
                 
                     await _responseProcessor.ProcessFunctionCall(responseServiceObj);
-                    state = ResponseState.FunctionCallProcessed;
+                    state = ResponseState.AwaitingInput;
+                    break;
                 }
                 else if (line.StartsWith(">"))
                 {
@@ -157,7 +165,9 @@ public class LLMProcessRunner : ILLMProcessRunner
                     await _responseProcessor.ProcessLLMOutput(responseServiceObj);
                     _logger.LogInformation($" ProcessLLMOutput(back_to_prompt) -> {str}");
                     responseBuilder.Clear();
-                    state = ResponseState.Completed;
+                    state = ResponseState.AwaitingInput;
+                    break;
+                   // state = ResponseState.Completed;
                 }
             }
             else if (state == ResponseState.FunctionCallProcessed)
@@ -170,6 +180,7 @@ public class LLMProcessRunner : ILLMProcessRunner
                 _logger.LogInformation($" ProcessLLMOutput(after_func_call) -> {str}");
                 responseBuilder.Clear();
                 state = ResponseState.AwaitingInput;
+                break;
             }
         }
 

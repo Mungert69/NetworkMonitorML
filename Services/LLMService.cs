@@ -107,7 +107,7 @@ public class LLMResponseProcessor : ILLMResponseProcessor
 
     public async Task ProcessLLMOutput(LLMServiceObj serviceObj)
     {
-        Console.WriteLine(serviceObj.LlmMessage);
+        //Console.WriteLine(serviceObj.LlmMessage);
         await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceMessage", serviceObj);
         //return Task.CompletedTask;
     }
@@ -123,11 +123,17 @@ public class LLMResponseProcessor : ILLMResponseProcessor
     {
         try
         {
-            var jsonElement = JsonDocument.Parse(input).RootElement;
-            return jsonElement.TryGetProperty("name", out _);
+
+    // Deserialize the modified JSON string
+     FunctionCallData functionCallData = JsonSerializer.Deserialize<FunctionCallData>(input);
+
+
+
+            return true;
         }
-        catch (JsonException)
+        catch (Exception ex)
         {
+               Console.WriteLine($"Error parsing JSON: {ex.Message}");
             return false;
         }
     }

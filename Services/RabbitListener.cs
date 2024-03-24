@@ -352,6 +352,12 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
 
         try
         {
+            if (serviceObj.IsFunctionCallResponse) {
+                if (serviceObj.ResultSuccess)
+                serviceObj.UserInput = "FUNCTION RESPONSE : { \"message\" : \""+serviceObj.ResultMessage+"\" }";
+                else serviceObj.UserInput ="FUNCTION RESPONSE : { \"message\" : \" Failed "+serviceObj.ResultMessage+"\" }";
+                
+            }
             var resultServiceObj = await _llmService.SendInputAndGetResponse(serviceObj);
             result.Message = resultServiceObj.ResultMessage;
             result.Success = resultServiceObj.ResultSuccess;
