@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 using System.Threading.Tasks;
 using Moq;
 using Xunit;
+using NetworkMonitor.Objects.ServiceMessage;
+using NetworkMonitor.Objects.Repository;
 namespace NetworkMonitor.ML.Services;
 
 public class LLMProcessRunnerTests
@@ -16,12 +18,14 @@ public class LLMProcessRunnerTests
      private readonly Mock<ILogger<FunctionExecutor>> _loggerFunctionExecutorMock;
       private readonly Mock<ILogger<LLMResponseProcessor>> _loggerLLMResponseProcessorMock;
        private readonly Mock<ILogger<LLMProcessRunner>> _loggerLLMProcessRunnerMock;
+               private readonly Mock<IRabbitRepo> _rabbitRepoMock;
        public LLMProcessRunnerTests()
         {
             _loggerLLMServiceMock = new Mock<ILogger<LLMService>>();
         _loggerFunctionExecutorMock = new Mock<ILogger<FunctionExecutor>>();
         _loggerLLMProcessRunnerMock = new Mock<ILogger<LLMProcessRunner>>();
         _loggerLLMResponseProcessorMock = new Mock<ILogger<LLMResponseProcessor>>();
+                    _rabbitRepoMock = new Mock<IRabbitRepo>();
         }
 
     [Fact]
@@ -32,16 +36,16 @@ public class LLMProcessRunnerTests
         mockProcessWrapper.Setup(p => p.StandardOutput.ReadLineAsync())
                .Returns(() =>
                {
-                   string line = ">";
+                   string line = "<|im_end|>";
                    return Task.FromResult(line);
                });
                 var mockResponseProcessor = new Mock<ILLMResponseProcessor>();
         mockProcessWrapper.Setup(p => p.Start());
-        var processRunner = new LLMProcessRunner(_loggerLLMProcessRunnerMock.Object,mockResponseProcessor.Object,mockProcessWrapper.Object, false);
+        var processRunner = new LLMProcessRunner(_loggerLLMProcessRunnerMock.Object,mockResponseProcessor.Object);
 
 
         // Act
-        await processRunner.StartProcess("path/to/model");
+        await processRunner.StartProcess("test","path/to/model",mockProcessWrapper.Object);
 
         // Assert
         mockProcessWrapper.Verify(p => p.Start(), Times.Once);
@@ -50,6 +54,7 @@ public class LLMProcessRunnerTests
     [Fact]
     public async Task SendInputAndGetResponse_ShouldSendInputAndProcessOutput()
     {
+         
         // Arrange
         var mockProcessWrapper = new Mock<ProcessWrapper>();
         mockProcessWrapper.Setup(p => p.StandardInput.WriteLineAsync(It.IsAny<string>()))
@@ -59,6 +64,7 @@ public class LLMProcessRunnerTests
 
         var outputLines = new[]
         {
+        "<|im_end|>",
         "> Add Host 192.168.1.1",
         "{\"name\":\"AddHostGPTDefault\",\"parameters\":{\"host\":\"192.168.1.1\"}}",
         "\n",
@@ -80,35 +86,51 @@ public class LLMProcessRunnerTests
              return null;
          }
      });
-
+        var serviceObj = new LLMServiceObj() { SessionId = "test", UserInput="> Add Host 192.168.1.1" };
         var mockResponseProcessor = new Mock<ILLMResponseProcessor>();
         mockResponseProcessor.Setup(p => p.IsFunctionCallResponse(It.IsAny<string>()))
             .Returns<string>(input => input.StartsWith("{"));
-        mockResponseProcessor.Setup(p => p.ProcessFunctionCall(It.IsAny<string>()))
+        mockResponseProcessor.Setup(p => p.ProcessFunctionCall(It.IsAny<LLMServiceObj>()))
             .Returns(Task.CompletedTask);
-        mockResponseProcessor.Setup(p => p.ProcessLLMOutput(It.IsAny<string>()))
+        mockResponseProcessor.Setup(p => p.ProcessLLMOutput(It.IsAny<LLMServiceObj>()))
             .Returns(Task.CompletedTask);
 
-        var processRunner = new LLMProcessRunner(_loggerLLMProcessRunnerMock.Object,mockResponseProcessor.Object,mockProcessWrapper.Object, false);
-
+        var processRunner = new LLMProcessRunner(_loggerLLMProcessRunnerMock.Object,mockResponseProcessor.Object);
+       await processRunner.StartProcess("test","path/to/model",mockProcessWrapper.Object);
         // Act
-        await processRunner.SendInputAndGetResponse("> Add Host 192.168.1.1");
+        await processRunner.SendInputAndGetResponse(serviceObj);
 
-        // Assert
-        mockProcessWrapper.Verify(p => p.StandardInput.WriteLineAsync("> Add Host 192.168.1.1"), Times.Once);
-        mockProcessWrapper.Verify(p => p.StandardInput.FlushAsync(), Times.Once);
-        mockResponseProcessor.Verify(p => p.ProcessLLMOutput("> Add Host 192.168.1.1"), Times.Once);
-        mockResponseProcessor.Verify(p => p.ProcessFunctionCall("{\"name\":\"AddHostGPTDefault\",\"parameters\":{\"host\":\"192.168.1.1\"}}"), Times.Once);
-        mockResponseProcessor.Verify(p => p.ProcessLLMOutput("> Add Host 192.168.1.1\nCalling Function : {\"name\":\"AddHostGPTDefault\",\"parameters\":{\"host\":\"192.168.1.1\"}}"), Times.Once);
-    }
+         // Assert
+    mockProcessWrapper.Verify(p => p.StandardInput.WriteLineAsync("> Add Host 192.168.1.1"), Times.Once);
+    mockProcessWrapper.Verify(p => p.StandardInput.FlushAsync(), Times.Once);
+
+    mockResponseProcessor.Verify(
+        p => p.ProcessLLMOutput(It.Is<LLMServiceObj>(obj => obj.SessionId == "test" && obj.LlmMessage == "> Add Host 192.168.1.1")),
+        Times.Once);
+
+    mockResponseProcessor.Verify(
+        p => p.ProcessFunctionCall(It.Is<LLMServiceObj>(obj => obj.SessionId == "test" && obj.IsFunctionCall && obj.JsonFunction == "{\"name\":\"AddHostGPTDefault\",\"parameters\":{\"host\":\"192.168.1.1\"}}")),
+        Times.Once);
+
+    mockResponseProcessor.Verify(
+        p => p.ProcessLLMOutput(It.Is<LLMServiceObj>(obj => obj.SessionId == "test" && obj.LlmMessage == "> Add Host 192.168.1.1\nCalling Function : {\"name\":\"AddHostGPTDefault\",\"parameters\":{\"host\":\"192.168.1.1\"}}")),
+        Times.Once);   }
 }
 public class LLMResponseProcessorTests
 {
+                   private readonly Mock<IRabbitRepo> _rabbitRepoMock;
+
+                    public LLMResponseProcessorTests()
+        {
+           
+                    _rabbitRepoMock = new Mock<IRabbitRepo>();
+        }
+
     [Fact]
     public void IsFunctionCallResponse_ShouldReturnTrueForValidJson()
     {
         // Arrange
-        var responseProcessor = new LLMResponseProcessor(null);
+        var responseProcessor = new LLMResponseProcessor(null, _rabbitRepoMock.Object);
         var jsonInput = "{\"name\":\"SomeFunction\",\"parameters\":{}}";
 
         // Act
@@ -122,7 +144,7 @@ public class LLMResponseProcessorTests
     public void IsFunctionCallResponse_ShouldReturnFalseForInvalidJson()
     {
         // Arrange
-        var responseProcessor = new LLMResponseProcessor(null);
+        var responseProcessor = new LLMResponseProcessor(null,_rabbitRepoMock.Object);
         var invalidInput = "This is not JSON";
 
         // Act
@@ -151,7 +173,7 @@ public class FunctionExecutorTests
         };
 
         // Act
-        await executor.ExecuteFunction(functionCallData);
+        await executor.ExecuteFunction("test",functionCallData);
 
         // Assert (verify that the console output contains the expected parameters)
         var output = GetConsoleOutput();

@@ -2,209 +2,121 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using System.Threading;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
-
+using NetworkMonitor.Objects;
+using NetworkMonitor.Objects.ServiceMessage;
+using NetworkMonitor.Objects.Repository;
 
 
 namespace NetworkMonitor.ML.Services;
 // LLMService.cs
 public interface ILLMService
 {
-    Task StartProcess(string modelPath);
-    Task<string> SendInputAndGetResponse(string userInput);
+    Task<LLMServiceObj> StartProcess(LLMServiceObj llmServiceObj);
+    Task<LLMServiceObj> SendInputAndGetResponse(LLMServiceObj serviceObj);
 }
 
 public class LLMService : ILLMService
 {
     private ILogger _logger;
     private readonly ILLMProcessRunner _processRunner;
-   // private readonly ILLMResponseProcessor _responseProcessor;
+        private IRabbitRepo _rabbitRepo;
 
-    public LLMService(ILogger<LLMService> logger, ILLMProcessRunner processRunner)
+    private readonly Dictionary<string, Session> _sessions = new Dictionary<string, Session>();
+    // private readonly ILLMResponseProcessor _responseProcessor;
+
+    public LLMService(ILogger<LLMService> logger, ILLMProcessRunner processRunner, IRabbitRepo rabbitRepo)
     {
         _processRunner = processRunner;
+        _rabbitRepo = rabbitRepo;
         _logger = logger;
     }
-
-    public async Task StartProcess(string modelPath)
+    
+    public async Task<LLMServiceObj> StartProcess(LLMServiceObj llmServiceObj)
     {
-        await _processRunner.StartProcess(modelPath);
+        string modelPath = "notset";
+        llmServiceObj.SessionId = Guid.NewGuid().ToString();
+        try
+        {
+            await _processRunner.StartProcess(llmServiceObj.SessionId, modelPath);
+            _sessions[llmServiceObj.SessionId] = new Session();
+            llmServiceObj.ResultMessage = " Success : LLMService Started Session .";
+            llmServiceObj.ResultSuccess = true;
+            await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceStart", llmServiceObj);
+        }
+        catch (Exception e)
+        {
+            llmServiceObj.ResultMessage = e.Message;
+            llmServiceObj.ResultSuccess = false;
+         }
+
+
+        return llmServiceObj;
     }
 
-    public async Task<string> SendInputAndGetResponse(string userInput)
+    public async Task<LLMServiceObj> SendInputAndGetResponse(LLMServiceObj serviceObj)
     {
-        return await _processRunner.SendInputAndGetResponse(userInput);
+        if (!_sessions.TryGetValue(serviceObj.SessionId, out var session)) { 
+            serviceObj.ResultMessage="Invalid session ID";
+            serviceObj.ResultSuccess = false;
+            return serviceObj;
+        }
+
+        try { 
+            var resultServiceObj= await _processRunner.SendInputAndGetResponse(serviceObj);
+        }
+        catch (Exception e) {
+            serviceObj.ResultMessage = e.Message;
+            serviceObj.ResultSuccess = false;
+            return serviceObj;
+        }
+        return serviceObj;
+    }
+
+     public void EndSession(string sessionId)
+    {
+        _sessions.Remove(sessionId);
     }
 }
 
-// LLMProcessRunner.cs
-public interface ILLMProcessRunner
-{
-    Task StartProcess(string modelPath);
-    Task<string> SendInputAndGetResponse(string userInput);
-}
 
-public class LLMProcessRunner : ILLMProcessRunner
-{
-    private ProcessWrapper _llamaProcess;
-    private ILogger _logger;
-    private ILLMResponseProcessor _responseProcessor;
 
-    public LLMProcessRunner(ILogger<LLMProcessRunner> logger, ILLMResponseProcessor responseProcessor)
-    {
-                _logger = logger;
-        _responseProcessor = responseProcessor;
-        _llamaProcess = new ProcessWrapper();
-        SetStartInfo();
-
-    }
-    public LLMProcessRunner(ILogger<LLMProcessRunner> logger,ILLMResponseProcessor responseProcessor,ProcessWrapper? process, bool setStartInfo = true)
-    {
-                _logger = logger;
-                        _responseProcessor = responseProcessor;
-        if (process == null) _llamaProcess = new ProcessWrapper();
-        else _llamaProcess = process;
-        if (setStartInfo) SetStartInfo();
-    }
-
-    public void SetStartInfo()
-    {
-        _llamaProcess.StartInfo.FileName = "/home/mahadeva/code/llama.cpp/build/bin/main";
-        _llamaProcess.StartInfo.Arguments = "-c 6000  -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt --color -r \"User:\" --in-prefix \" \" -ins --keep -1 --temp 0";
-        _llamaProcess.StartInfo.UseShellExecute = false;
-        _llamaProcess.StartInfo.RedirectStandardInput = true;
-        _llamaProcess.StartInfo.RedirectStandardOutput = true;
-        _llamaProcess.StartInfo.CreateNoWindow = true;
-    }
-    public async Task StartProcess(string modelPath)
-    {
-        if (_llamaProcess == null)
-        {
-            throw new InvalidOperationException("LLM process is not initialized");
-        }
-        _logger.LogInformation($" LLMService StartProcess()");
-        _llamaProcess.Start();
-        await WaitForReadySignal();
-    }
-
-    private async Task WaitForReadySignal()
-    {
-        bool isReady = false;
-        string line;
-        await Task.Delay(10000);
-        while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
-        {
-            if (line.StartsWith("<|im_end|>"))
-            {
-                isReady = true;
-                break;
-            }
-        }
-
-        if (!isReady)
-        {
-            throw new Exception("LLM process failed to indicate readiness");
-        }
-        _logger.LogInformation($" LLMService Process Started ");
-    }
-
-    public async Task<string> SendInputAndGetResponse(string userInput)
-    {
-        _logger.LogInformation($"  LLMService : SendInputAndGetResponse() :");
-        if (_llamaProcess == null || _llamaProcess.HasExited)
-        {
-            throw new InvalidOperationException("LLM process is not running");
-        }
-
-        await _llamaProcess.StandardInput.WriteLineAsync(userInput);
-        await _llamaProcess.StandardInput.FlushAsync();
-
-        var responseBuilder = new StringBuilder();
-        await _responseProcessor.ProcessLLMOutput(userInput);
-        _logger.LogInformation($" ProcessLLMOutput(user input) -> {userInput}");
-        string line;
-
-        var state = ResponseState.Initial;
-
-        while ((line = await _llamaProcess.StandardOutput.ReadLineAsync()) != null)
-        {
-            _logger.LogInformation($" Process -> {line}");
-            // build non prompt or json lines
-            if (!line.StartsWith("{")) responseBuilder.AppendLine(line);
-
-            if (state == ResponseState.Initial && line.StartsWith(">"))
-            {
-                // first line with user input is ignored ?
-                state = ResponseState.AwaitingInput;
-            }
-            else if (state == ResponseState.AwaitingInput)
-            {
-                if (_responseProcessor.IsFunctionCallResponse(line))
-                {
-                    // call function send user llm output
-                    responseBuilder.Append($"Calling Function : {line}");
-                    var str = responseBuilder.ToString();
-                    await _responseProcessor.ProcessLLMOutput(str);
-                            _logger.LogInformation($" ProcessLLMOutput(call_func) -> {str}");
-                    responseBuilder.Clear();
-                    await _responseProcessor.ProcessFunctionCall(line);
-                    state = ResponseState.FunctionCallProcessed;
-                }
-                else if (line.StartsWith(">"))
-                {
-                    // back to prompt finshed.
-                    var str = responseBuilder.ToString();
-                    await _responseProcessor.ProcessLLMOutput(str);
-                    _logger.LogInformation($" ProcessLLMOutput(back_to_prompt) -> {str}");
-                    responseBuilder.Clear();
-                    state = ResponseState.Completed;
-                }
-            }
-            else if (state == ResponseState.FunctionCallProcessed)
-            {
-                // after function call
-                var str = responseBuilder.ToString();
-                await _responseProcessor.ProcessLLMOutput(str);
-                                            _logger.LogInformation($" ProcessLLMOutput(after_func_call) -> {str}");
-                responseBuilder.Clear();
-                state = ResponseState.AwaitingInput;
-            }
-        }
-
-        return string.Empty;
-    }
-}
 
 // LLMResponseProcessor.cs
 public interface ILLMResponseProcessor
 {
-    Task ProcessLLMOutput(string output);
-    Task ProcessFunctionCall(string jsonStr);
+    Task ProcessLLMOutput(LLMServiceObj serviceObj);
+    Task ProcessFunctionCall(LLMServiceObj serviceObj);
     bool IsFunctionCallResponse(string input);
 }
 
 public class LLMResponseProcessor : ILLMResponseProcessor
 {
     private readonly IFunctionExecutor _functionExecutor;
+    private IRabbitRepo _rabbitRepo;
 
-    public LLMResponseProcessor(IFunctionExecutor functionExecutor)
+    public LLMResponseProcessor(IFunctionExecutor functionExecutor, IRabbitRepo rabbitRepo)
     {
         _functionExecutor = functionExecutor;
+        _rabbitRepo = rabbitRepo;
     }
 
-    public Task ProcessLLMOutput(string output)
+    public async Task ProcessLLMOutput(LLMServiceObj serviceObj)
     {
-        Console.WriteLine(output);
-        return Task.CompletedTask;
+        Console.WriteLine(serviceObj.LlmMessage);
+        await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceMessage", serviceObj);
+        //return Task.CompletedTask;
     }
 
-    public async Task ProcessFunctionCall(string jsonStr)
+    public async Task ProcessFunctionCall(LLMServiceObj serviceObj)
     {
-        var functionCallData = JsonSerializer.Deserialize<FunctionCallData>(jsonStr);
-        await _functionExecutor.ExecuteFunction(functionCallData);
+        await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceFunction", serviceObj);
+        //var functionCallData = JsonSerializer.Deserialize<FunctionCallData>(serviceObj.JsonFunction);
+        //await _functionExecutor.ExecuteFunction(serviceObj.SessionId,functionCallData);
     }
 
     public bool IsFunctionCallResponse(string input)
@@ -224,12 +136,12 @@ public class LLMResponseProcessor : ILLMResponseProcessor
 // FunctionExecutor.cs
 public interface IFunctionExecutor
 {
-    Task ExecuteFunction(FunctionCallData functionCallData);
+    Task ExecuteFunction(string sessionId,FunctionCallData functionCallData);
 }
 
 public class FunctionExecutor : IFunctionExecutor
 {
-    public async Task ExecuteFunction(FunctionCallData functionCallData)
+    public async Task ExecuteFunction(string sessionId,FunctionCallData functionCallData)
     {
         switch (functionCallData.name)
         {
@@ -285,101 +197,7 @@ public class FunctionCallData
 
 public enum ResponseState { Initial, AwaitingInput, FunctionCallProcessed, Completed }
 
-public class ProcessWrapper
+public class Session
 {
-    private Process _process;
-
-    public ProcessWrapper()
-    {
-        _process = new Process();
-
-    }
-
-    public ProcessWrapper(Process? process = null)
-    {
-        if (process == null) _process = new Process();
-        else _process = process;
-    }
-
-    public virtual IStreamWriter StandardInput => new StreamWriterWrapper(_process.StandardInput);
-    public virtual IStreamReader StandardOutput => new StreamReaderWrapper(_process.StandardOutput);
-
-
-    public virtual ProcessStartInfo StartInfo => _process.StartInfo;
-
-    public virtual bool HasExited => _process.HasExited;
-
-    public virtual void Start()
-    {
-        _process.Start();
-    }
-
-    public virtual Task<string> StandardOutputReadLineAsync()
-    {
-        return _process.StandardOutput.ReadLineAsync();
-    }
-
-    public virtual Task StandardInputWriteLineAsync(string input)
-    {
-        return _process.StandardInput.WriteLineAsync(input);
-    }
-
-    public virtual Task StandardInputFlushAsync()
-    {
-        return _process.StandardInput.FlushAsync();
-    }
-
-    // Add any other methods or properties you need to mock
+    public List<string> Responses { get; } = new List<string>();
 }
-
-public interface IStreamReader
-{
-    Task<string> ReadLineAsync();
-    // Add other necessary methods from StreamReader
-}
-
-public interface IStreamWriter
-{
-    Task WriteLineAsync(string value);
-    Task FlushAsync();
-    // Add other necessary methods from StreamWriter
-}
-public class StreamReaderWrapper : IStreamReader
-{
-    private readonly StreamReader _innerStreamReader;
-
-    public StreamReaderWrapper(StreamReader streamReader)
-    {
-        _innerStreamReader = streamReader;
-    }
-
-    public Task<string> ReadLineAsync()
-    {
-        return _innerStreamReader.ReadLineAsync();
-    }
-
-    // Implement other methods from IStreamReader if needed
-}
-
-public class StreamWriterWrapper : IStreamWriter
-{
-    private readonly StreamWriter _innerStreamWriter;
-
-    public StreamWriterWrapper(StreamWriter streamWriter)
-    {
-        _innerStreamWriter = streamWriter;
-    }
-
-    public Task WriteLineAsync(string value)
-    {
-        return _innerStreamWriter.WriteLineAsync(value);
-    }
-
-    public Task FlushAsync()
-    {
-        return _innerStreamWriter.FlushAsync();
-    }
-
-    // Implement other methods from IStreamWriter if needed
-}
-

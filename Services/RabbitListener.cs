@@ -16,12 +16,15 @@ using NetworkMonitor.Utils.Helpers;
 using NetworkMonitor.Objects.Repository;
 using System.Net;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using OneOf.Types;
 namespace NetworkMonitor.ML.Services;
 
 public interface IRabbitListener
 {
 
     Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj);
+    Task<ResultObj> StartSession(LLMServiceObj? llmServiceObj);
+    Task<ResultObj> UserInput(LLMServiceObj? llmServiceObj);
 
 
 }
@@ -29,11 +32,13 @@ public interface IRabbitListener
 public class RabbitListener : RabbitListenerBase, IRabbitListener
 {
     protected IMonitorMLService _mlService;
+    protected ILLMService _llmService;
 
-    public RabbitListener(IMonitorMLService mlService, ILogger<RabbitListenerBase> logger, ISystemParamsHelper systemParamsHelper) : base(logger, DeriveSystemUrl(systemParamsHelper))
+    public RabbitListener(IMonitorMLService mlService,ILLMService llmService, ILogger<RabbitListenerBase> logger, ISystemParamsHelper systemParamsHelper) : base(logger, DeriveSystemUrl(systemParamsHelper))
     {
 
         _mlService = mlService;
+        _llmService = llmService;
         Setup();
     }
 
@@ -51,24 +56,37 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             FuncName = "mlCheck",
             MessageTimeout = 60000
         });
-         _rabbitMQObjs.Add(new RabbitMQObj()
+        _rabbitMQObjs.Add(new RabbitMQObj()
         {
             ExchangeName = "mlCheckHost",
             FuncName = "mlCheckHost",
             MessageTimeout = 60000
         });
-         _rabbitMQObjs.Add(new RabbitMQObj()
+        _rabbitMQObjs.Add(new RabbitMQObj()
         {
             ExchangeName = "mlCheckLatestHosts",
             FuncName = "mlCheckLatestHosts",
             MessageTimeout = 60000
         });
-         _rabbitMQObjs.Add(new RabbitMQObj()
+        _rabbitMQObjs.Add(new RabbitMQObj()
         {
             ExchangeName = "predictPingInfos",
             FuncName = "predictPingInfos",
             MessageTimeout = 60000
         });
+        _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "llmStartSession",
+            FuncName = "llmStartSession",
+            MessageTimeout = 60000
+        });
+        _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "llmUserInput",
+            FuncName = "llmUserInput",
+            MessageTimeout = 60000
+        });
+
 
     }
     protected override ResultObj DeclareConsumers()
@@ -127,7 +145,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     }
                 };
                     break;
-                     case "mlCheckLatestHosts":
+                case "mlCheckLatestHosts":
                     rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
                     rabbitMQObj.Consumer.Received += async (model, ea) =>
                 {
@@ -142,9 +160,9 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     }
                 };
                     break;
-                    case "predictPingInfos":
+                case "predictPingInfos":
                     rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.Received +=  (model, ea) =>
+                    rabbitMQObj.Consumer.Received += (model, ea) =>
                 {
                     try
                     {
@@ -154,6 +172,36 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     catch (Exception ex)
                     {
                         _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictPingInfos " + ex.Message);
+                    }
+                };
+                    break;
+                case "llmStartSession":
+                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.Received += async (model, ea) =>
+                {
+                    try
+                    {
+                        result = await StartSession(ConvertToObject<LLMServiceObj>(model, ea));
+                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.llmStartSession " + ex.Message);
+                    }
+                };
+                    break;
+                case "llmUserInput":
+                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.Received += async (model, ea) =>
+                {
+                    try
+                    {
+                        result = await UserInput(ConvertToObject<LLMServiceObj>(model, ea));
+                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.llmUserInput " + ex.Message);
                     }
                 };
                     break;
@@ -240,7 +288,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         return result;
     }
-public  ResultObj UpdatePingInfos(ProcessorDataObj? processorDataObj)
+    public ResultObj UpdatePingInfos(ProcessorDataObj? processorDataObj)
     {
         ResultObj result = new ResultObj();
         result.Success = false;
@@ -261,6 +309,58 @@ public  ResultObj UpdatePingInfos(ProcessorDataObj? processorDataObj)
             result.Success = false;
             result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
             _logger.LogError(result.Message);
+        }
+        return result;
+    }
+    public async Task<ResultObj> StartSession(LLMServiceObj? llmServiceObj)
+    {
+        var result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : StartSession : ";
+        if (llmServiceObj == null)
+        {
+            return new ResultObj() { Message = " Error : llmServiceObj is null." };
+        }
+
+        try
+        {
+            llmServiceObj = await _llmService.StartProcess(llmServiceObj);
+            result.Message = llmServiceObj.ResultMessage;
+            result.Success = llmServiceObj.ResultSuccess;
+
+
+        }
+        catch (Exception e)
+        {
+            result.Message = e.Message;
+            result.Success = false;
+        }
+
+
+        return result;
+    }
+
+    public async Task<ResultObj> UserInput(LLMServiceObj? serviceObj)
+    {
+        var result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : UserInput : ";
+        if (serviceObj == null)
+        {
+            return new ResultObj() { Message = " Error : serviceObj is null." };
+        }
+
+        try
+        {
+            var resultServiceObj = await _llmService.SendInputAndGetResponse(serviceObj);
+            result.Message = resultServiceObj.ResultMessage;
+            result.Success = resultServiceObj.ResultSuccess;
+        }
+        catch (Exception e)
+        {
+            result.Message = e.Message;
+            result.Success = false;
+
         }
         return result;
     }

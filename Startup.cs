@@ -20,6 +20,7 @@ using NetworkMonitor.ML.Model;
 using HostInitActions;
 using Microsoft.Extensions.Logging;
 using NetworkMonitor.Utils.Helpers;
+using NetworkMonitor.Objects.ServiceMessage;
 namespace NetworkMonitor.ML
 {
     public class Startup
@@ -88,8 +89,10 @@ namespace NetworkMonitor.ML
                     })
                      .AddInitAction<ILLMService>(async (llmService) =>
                     {
-                        await llmService.StartProcess("not set here");
-                        await llmService.SendInputAndGetResponse("Add Host 192.168.1.1");
+                        var llmServiceObj = new LLMServiceObj() { RequestSessionId = "test" };
+                        var serviceObj=await llmService.StartProcess(llmServiceObj);
+                        serviceObj.UserInput = "Add Host 192.168.1.1";
+                        await llmService.SendInputAndGetResponse(serviceObj);
                     });
         }
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
