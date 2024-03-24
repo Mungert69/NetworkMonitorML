@@ -96,12 +96,12 @@ public interface ILLMResponseProcessor
 
 public class LLMResponseProcessor : ILLMResponseProcessor
 {
-    private readonly IFunctionExecutor _functionExecutor;
+
     private IRabbitRepo _rabbitRepo;
 
-    public LLMResponseProcessor(IFunctionExecutor functionExecutor, IRabbitRepo rabbitRepo)
+    public LLMResponseProcessor(IRabbitRepo rabbitRepo)
     {
-        _functionExecutor = functionExecutor;
+
         _rabbitRepo = rabbitRepo;
     }
 
@@ -133,67 +133,6 @@ public class LLMResponseProcessor : ILLMResponseProcessor
     }
 }
 
-// FunctionExecutor.cs
-public interface IFunctionExecutor
-{
-    Task ExecuteFunction(string sessionId,FunctionCallData functionCallData);
-}
-
-public class FunctionExecutor : IFunctionExecutor
-{
-    public async Task ExecuteFunction(string sessionId,FunctionCallData functionCallData)
-    {
-        switch (functionCallData.name)
-        {
-            case "AddHostGPTDefault":
-                await CallAddHostFunction(functionCallData.parameters);
-                break;
-            case "EditHostGPTDefault":
-                await CallEditHostFunction(functionCallData.parameters);
-                break;
-            case "GetHostDataByHostAddressDefault":
-                await CallGetHostDataFunction(functionCallData.parameters);
-                break;
-            default:
-                Console.WriteLine("Unknown function: " + functionCallData.name);
-                break;
-        }
-    }
-
-    private async Task CallAddHostFunction(Dictionary<string, string> parameters)
-    {
-        Console.WriteLine("Add host function called with parameters:");
-        foreach (var kvp in parameters)
-        {
-            Console.WriteLine($"{kvp.Key}: {kvp.Value}");
-        }
-    }
-
-    private async Task CallEditHostFunction(Dictionary<string, string> parameters)
-    {
-        Console.WriteLine("Edit host function called with parameters:");
-        foreach (var kvp in parameters)
-        {
-            Console.WriteLine($"{kvp.Key}: {kvp.Value}");
-        }
-    }
-
-    private async Task CallGetHostDataFunction(Dictionary<string, string> parameters)
-    {
-        Console.WriteLine("Get host data function called with parameters:");
-        foreach (var kvp in parameters)
-        {
-            Console.WriteLine($"{kvp.Key}: {kvp.Value}");
-        }
-    }
-}
-
-// Helper class to represent the deserialized JSON
-public class FunctionCallData
-{
-    public string name { get; set; }
-    public Dictionary<string, string> parameters { get; set; }
-}
 
 public enum ResponseState { Initial, AwaitingInput, FunctionCallProcessed, Completed }
 

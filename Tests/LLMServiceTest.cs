@@ -9,20 +9,20 @@ using Moq;
 using Xunit;
 using NetworkMonitor.Objects.ServiceMessage;
 using NetworkMonitor.Objects.Repository;
+
 namespace NetworkMonitor.ML.Services;
 
 public class LLMProcessRunnerTests
 {
 
     private readonly Mock<ILogger<LLMService>> _loggerLLMServiceMock;
-     private readonly Mock<ILogger<FunctionExecutor>> _loggerFunctionExecutorMock;
       private readonly Mock<ILogger<LLMResponseProcessor>> _loggerLLMResponseProcessorMock;
        private readonly Mock<ILogger<LLMProcessRunner>> _loggerLLMProcessRunnerMock;
                private readonly Mock<IRabbitRepo> _rabbitRepoMock;
        public LLMProcessRunnerTests()
         {
             _loggerLLMServiceMock = new Mock<ILogger<LLMService>>();
-        _loggerFunctionExecutorMock = new Mock<ILogger<FunctionExecutor>>();
+
         _loggerLLMProcessRunnerMock = new Mock<ILogger<LLMProcessRunner>>();
         _loggerLLMResponseProcessorMock = new Mock<ILogger<LLMResponseProcessor>>();
                     _rabbitRepoMock = new Mock<IRabbitRepo>();
@@ -130,7 +130,7 @@ public class LLMResponseProcessorTests
     public void IsFunctionCallResponse_ShouldReturnTrueForValidJson()
     {
         // Arrange
-        var responseProcessor = new LLMResponseProcessor(null, _rabbitRepoMock.Object);
+        var responseProcessor = new LLMResponseProcessor( _rabbitRepoMock.Object);
         var jsonInput = "{\"name\":\"SomeFunction\",\"parameters\":{}}";
 
         // Act
@@ -144,7 +144,7 @@ public class LLMResponseProcessorTests
     public void IsFunctionCallResponse_ShouldReturnFalseForInvalidJson()
     {
         // Arrange
-        var responseProcessor = new LLMResponseProcessor(null,_rabbitRepoMock.Object);
+        var responseProcessor = new LLMResponseProcessor(_rabbitRepoMock.Object);
         var invalidInput = "This is not JSON";
 
         // Act
@@ -155,42 +155,4 @@ public class LLMResponseProcessorTests
     }
 }
 
-public class FunctionExecutorTests
-{
-    [Fact]
-    public async Task ExecuteFunction_ShouldCallAddHostFunction()
-    {
-        // Arrange
-        var executor = new FunctionExecutor();
-        var functionCallData = new FunctionCallData
-        {
-            name = "AddHostGPTDefault",
-            parameters = new Dictionary<string, string>
-            {
-                { "host", "192.168.1.1" },
-                { "description", "Test host" }
-            }
-        };
-
-        // Act
-        await executor.ExecuteFunction("test",functionCallData);
-
-        // Assert (verify that the console output contains the expected parameters)
-        var output = GetConsoleOutput();
-        Assert.Contains("Add host function called with parameters:", output);
-        Assert.Contains("host: 192.168.1.1", output);
-        Assert.Contains("description: Test host", output);
-    }
-
-    // Add more tests for other function cases
-
-    private static string GetConsoleOutput()
-    {
-        var builder = new StringBuilder();
-        var writer = new StringWriter(builder);
-        Console.SetOut(writer);
-
-        return builder.ToString();
-    }
-}
 

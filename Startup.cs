@@ -71,7 +71,6 @@ namespace NetworkMonitor.ML
             services.AddSingleton<IRabbitRepo, RabbitRepo>();
             services.AddSingleton<IFileRepo, FileRepo>();
             services.AddSingleton<ISystemParamsHelper, SystemParamsHelper>();
-            services.AddSingleton<IFunctionExecutor, FunctionExecutor>();
              services.AddSingleton<ILLMResponseProcessor, LLMResponseProcessor>();
              services.AddSingleton<ILLMService, LLMService>();
              services.AddSingleton<ILLMProcessRunner, LLMProcessRunner>();
