@@ -16,7 +16,7 @@ namespace NetworkMonitor.ML.Services;
 // LLMProcessRunner.cs
 public interface ILLMProcessRunner
 {
-    Task StartProcess(string sessionId ,string modelPath, ProcessWrapper? testProcess=null);
+    Task StartProcess(string sessionId, string modelPath, ProcessWrapper? testProcess = null);
     Task<string> SendInputAndGetResponse(LLMServiceObj serviceObj);
 }
 
@@ -36,7 +36,7 @@ public class LLMProcessRunner : ILLMProcessRunner
         //SetStartInfo();
 
     }
-  
+
 
     public void SetStartInfo(ProcessStartInfo startInfo, string modelPath)
     {
@@ -44,22 +44,24 @@ public class LLMProcessRunner : ILLMProcessRunner
         startInfo.Arguments = "-c 6000  -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0";
         startInfo.UseShellExecute = false;
         startInfo.RedirectStandardInput = true;
-       startInfo.RedirectStandardOutput = true;
-       startInfo.CreateNoWindow = true;
+        startInfo.RedirectStandardOutput = true;
+        startInfo.CreateNoWindow = true;
     }
-    public async Task StartProcess(string sessionId, string modelPath, ProcessWrapper? testProcess=null)
+    public async Task StartProcess(string sessionId, string modelPath, ProcessWrapper? testProcess = null)
     {
         if (_processes.ContainsKey(sessionId))
             throw new Exception("Process already running for this session");
 
-     
+
         _logger.LogInformation($" LLM Service : Start Process for sessionsId {sessionId}");
         ProcessWrapper process;
-        if (testProcess == null) {
+        if (testProcess == null)
+        {
             process = new ProcessWrapper();
             SetStartInfo(process.StartInfo, modelPath);
         }
-        else {
+        else
+        {
             process = testProcess;
         }
         process.Start();
@@ -94,17 +96,28 @@ public class LLMProcessRunner : ILLMProcessRunner
         }
         _logger.LogInformation($" LLMService Process Started ");
     }
-static string RemoveAnsiEscapeSequences(string input)
+    private string RemoveAnsiEscapeSequences(string input)
     {
-        
-        input=System.Text.RegularExpressions.Regex.Replace(input, @"\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]", "");
-          input = input.Replace("'", "");
-        return input;
+         _logger.LogInformation($" before -> {input} <-");
+        string newLine = string.Empty;    
+        int startIndex = input.IndexOf('{');
+        if (startIndex != -1)
+        {
+            newLine = input.Substring(startIndex);
+        }
+        else
+        {
+            return newLine;
+        }
+        // input=System.Text.RegularExpressions.Regex.Replace(input, @"\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]", "");
+        newLine = newLine.Replace("'", "");
+         _logger.LogInformation($" after -> {newLine} <-");
+        return newLine;
     }
     public async Task<string> SendInputAndGetResponse(LLMServiceObj serviceObj)
     {
-        var responseServiceObj = new LLMServiceObj() { SessionId=serviceObj.SessionId};
-          if (!_processes.TryGetValue(serviceObj.SessionId, out var process))
+        var responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+        if (!_processes.TryGetValue(serviceObj.SessionId, out var process))
             throw new Exception("No process found for the given session");
 
         _logger.LogInformation($"  LLMService : SendInputAndGetResponse() :");
@@ -121,14 +134,14 @@ static string RemoveAnsiEscapeSequences(string input)
         await _responseProcessor.ProcessLLMOutput(responseServiceObj);
         _logger.LogInformation($" ProcessLLMOutput(user input) -> {serviceObj.UserInput}");
         string line;
-
+        int emptyLineCount = 0;
         var state = ResponseState.Initial;
 
         while ((line = await process.StandardOutput.ReadLineAsync()) != null)
         {
-            //_logger.LogInformation($" Process -> {line}");
+           // _logger.LogInformation($" Process -> {line}");
             // build non prompt or json lines
-            if (!line.StartsWith("{")) responseBuilder.AppendLine(line);
+           // if (!line.StartsWith("{")) responseBuilder.AppendLine(line);
 
             if (state == ResponseState.Initial && line.StartsWith(">"))
             {
@@ -137,54 +150,58 @@ static string RemoveAnsiEscapeSequences(string input)
             }
             else if (state == ResponseState.AwaitingInput)
             {
+                string str;
                 string cleanLine = RemoveAnsiEscapeSequences(line);
                 if (_responseProcessor.IsFunctionCallResponse(cleanLine))
                 {
                     // call function send user llm output
-                    responseBuilder.Append($"Calling Function : {line}");
-                    var str = responseBuilder.ToString();
-                    responseServiceObj = new LLMServiceObj() { SessionId=serviceObj.SessionId};
-                    responseServiceObj.LlmMessage = str;
-                   await _responseProcessor.ProcessLLMOutput(responseServiceObj);
-                    _logger.LogInformation($" ProcessLLMOutput(call_func) -> {line}");
-                    responseBuilder.Clear();
-                    responseServiceObj = new LLMServiceObj() { SessionId=serviceObj.SessionId};
-                    responseServiceObj.IsFunctionCall = true;
-                    
-                    responseServiceObj.JsonFunction = cleanLine;
-                
-                    await _responseProcessor.ProcessFunctionCall(responseServiceObj);
-                    state = ResponseState.AwaitingInput;
-                    break;
-                }
-                else if (line.StartsWith(">"))
-                {
-                    // back to prompt finshed.
-                    var str = responseBuilder.ToString();
-                    responseServiceObj = new LLMServiceObj() { SessionId=serviceObj.SessionId};
-                    responseServiceObj.LlmMessage = str;
+                    responseBuilder.Append($"Calling Function : {cleanLine}");
+                    //str = responseBuilder.ToString();
+                    responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+                    responseServiceObj.LlmMessage = line;
                     await _responseProcessor.ProcessLLMOutput(responseServiceObj);
-                    _logger.LogInformation($" ProcessLLMOutput(back_to_prompt) -> {str}");
+                    _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
                     responseBuilder.Clear();
-                    state = ResponseState.AwaitingInput;
+                    responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+                    responseServiceObj.IsFunctionCall = true;
+
+                    responseServiceObj.JsonFunction = cleanLine;
+
+                    await _responseProcessor.ProcessFunctionCall(responseServiceObj);
+                    state = ResponseState.FunctionCallProcessed;
                     break;
-                   //state = ResponseState.Completed;
                 }
+
+                // back to prompt finshed.
+                //str = responseBuilder.ToString();
+                responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+                responseServiceObj.LlmMessage = line;
+                await _responseProcessor.ProcessLLMOutput(responseServiceObj);
+                responseBuilder.Clear();
+                //state = ResponseState.AwaitingInput;
+                if (line == "") emptyLineCount++;
+                if (emptyLineCount==2)
+                {
+                    state = ResponseState.Completed;
+                    break;
+                }
+
+
             }
             else if (state == ResponseState.FunctionCallProcessed)
             {
                 // after function call
                 var str = responseBuilder.ToString();
-                responseServiceObj = new LLMServiceObj() { SessionId=serviceObj.SessionId};
+                responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
                 responseServiceObj.LlmMessage = str;
                 await _responseProcessor.ProcessLLMOutput(responseServiceObj);
                 _logger.LogInformation($" ProcessLLMOutput(after_func_call) -> {str}");
                 responseBuilder.Clear();
-                state = ResponseState.AwaitingInput;
+                state = ResponseState.Completed;
                 break;
             }
         }
-
+        _logger.LogInformation(" --> Finshed LLM Interaction ");
         return string.Empty;
     }
 }

@@ -120,8 +120,7 @@ public class LLMResponseProcessor : ILLMResponseProcessor
     public async Task ProcessFunctionCall(LLMServiceObj serviceObj)
     {
         await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceFunction", serviceObj);
-        //var functionCallData = JsonSerializer.Deserialize<FunctionCallData>(serviceObj.JsonFunction);
-        //await _functionExecutor.ExecuteFunction(serviceObj.SessionId,functionCallData);
+        
     }
 
     public bool IsFunctionCallResponse(string input)
@@ -129,16 +128,12 @@ public class LLMResponseProcessor : ILLMResponseProcessor
         try
         {
 
-    Console.WriteLine($"Parsing JSON: {input}");
-     FunctionCallData functionCallData = JsonSerializer.Deserialize<FunctionCallData>(input);
-
-
-
+            FunctionCallData functionCallData = JsonSerializer.Deserialize<FunctionCallData>(input);
             return true;
         }
         catch (Exception ex)
         {
-               Console.WriteLine($"Error parsing JSON: {ex.Message}");
+               //Console.WriteLine($"Error parsing JSON: {ex.Message}");
             return false;
         }
     }

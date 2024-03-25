@@ -214,7 +214,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         {
             string message = " Error : failed to declare consumers. Error was : " + e.ToString() + " . ";
             result.Message += message;
-            Console.WriteLine(result.Message);
+            _logger.LogError(result.Message);
             result.Success = false;
         }
         return result;
@@ -353,10 +353,8 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         try
         {
             if (serviceObj.IsFunctionCallResponse) {
-                if (serviceObj.ResultSuccess)
-                serviceObj.UserInput = "FUNCTION RESPONSE : { status : \"success\" , \"message\" : \""+serviceObj.ResultMessage+"\" }";
-                else serviceObj.UserInput ="FUNCTION RESPONSE : { status : \"error\" ,\"message\" : \""+serviceObj.ResultMessage+"\" }";
-                
+                serviceObj.UserInput = "FUNCTION RESPONSE : {  \"message\" : \""+serviceObj.ResultMessage+"\" }";
+                 
             }
             var resultServiceObj = await _llmService.SendInputAndGetResponse(serviceObj);
             result.Message = resultServiceObj.ResultMessage;
