@@ -41,7 +41,7 @@ public class LLMProcessRunner : ILLMProcessRunner
     public void SetStartInfo(ProcessStartInfo startInfo, string modelPath)
     {
         startInfo.FileName = "/home/mahadeva/code/llama.cpp/build/bin/main";
-        startInfo.Arguments = "-c 6000  -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0";
+        startInfo.Arguments = "-c 6000 -n 1000 -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0";
         startInfo.UseShellExecute = false;
         startInfo.RedirectStandardInput = true;
         startInfo.RedirectStandardOutput = true;
@@ -143,7 +143,7 @@ public class LLMProcessRunner : ILLMProcessRunner
             // build non prompt or json lines
            // if (!line.StartsWith("{")) responseBuilder.AppendLine(line);
 
-            if (state == ResponseState.Initial && line.StartsWith(">"))
+            if (state == ResponseState.Initial )
             {
                 // first line with user input is ignored ?
                 state = ResponseState.AwaitingInput;
@@ -180,7 +180,7 @@ public class LLMProcessRunner : ILLMProcessRunner
                 responseBuilder.Clear();
                 //state = ResponseState.AwaitingInput;
                 if (line == "") emptyLineCount++;
-                if (emptyLineCount==2)
+                if ( emptyLineCount==2)
                 {
                     state = ResponseState.Completed;
                     break;
