@@ -98,8 +98,8 @@ public class LLMProcessRunner : ILLMProcessRunner
     }
     private string RemoveAnsiEscapeSequences(string input)
     {
-         _logger.LogInformation($" before -> {input} <-");
-        string newLine = string.Empty;    
+        _logger.LogInformation($" before -> {input} <-");
+        string newLine = string.Empty;
         int startIndex = input.IndexOf('{');
         if (startIndex != -1)
         {
@@ -111,7 +111,7 @@ public class LLMProcessRunner : ILLMProcessRunner
         }
         // input=System.Text.RegularExpressions.Regex.Replace(input, @"\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]", "");
         newLine = newLine.Replace("'", "");
-         _logger.LogInformation($" after -> {newLine} <-");
+        _logger.LogInformation($" after -> {newLine} <-");
         return newLine;
     }
     public async Task<string> SendInputAndGetResponse(LLMServiceObj serviceObj)
@@ -125,82 +125,60 @@ public class LLMProcessRunner : ILLMProcessRunner
         {
             throw new InvalidOperationException("LLM process is not running");
         }
+        var state = ResponseState.Initial;
+        int emptyLineCount = 0;
+        // Create a cancellation token source
+        var cancellationTokenSource = new CancellationTokenSource();
+
+        // Create an instance of the TokenBroadcaster
+        var tokenBroadcaster = new TokenBroadcaster(_responseProcessor);
+
+        tokenBroadcaster.LineReceived += async (sender, line) =>
+     {
+         if (state == ResponseState.Initial)
+         {
+             state = ResponseState.AwaitingInput;
+         }
+         else if (state == ResponseState.AwaitingInput)
+         {
+             string cleanLine = RemoveAnsiEscapeSequences(line);
+             if (_responseProcessor.IsFunctionCallResponse(cleanLine))
+             {
+                 _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
+                 responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+                 responseServiceObj.IsFunctionCall = true;
+                 responseServiceObj.JsonFunction = cleanLine;
+                 await _responseProcessor.ProcessFunctionCall(responseServiceObj);
+                 state = ResponseState.FunctionCallProcessed;
+                 cancellationTokenSource.Cancel();
+             }
+
+             if (line == "") emptyLineCount++;
+             if (emptyLineCount == 2)
+             {
+                 state = ResponseState.Completed;
+                 cancellationTokenSource.Cancel();
+             }
+
+
+         }
+         else if (state == ResponseState.FunctionCallProcessed)
+         {
+             state = ResponseState.Completed;
+             cancellationTokenSource.Cancel();
+         }
+     };
+
+
 
         await process.StandardInput.WriteLineAsync(serviceObj.UserInput);
         await process.StandardInput.FlushAsync();
-
-        var responseBuilder = new StringBuilder();
-        responseServiceObj.LlmMessage = serviceObj.UserInput;
-        await _responseProcessor.ProcessLLMOutput(responseServiceObj);
         _logger.LogInformation($" ProcessLLMOutput(user input) -> {serviceObj.UserInput}");
-        string line;
-        int emptyLineCount = 0;
-        var state = ResponseState.Initial;
-
-        while ((line = await process.StandardOutput.ReadLineAsync()) != null)
-        {
-           // _logger.LogInformation($" Process -> {line}");
-            // build non prompt or json lines
-           // if (!line.StartsWith("{")) responseBuilder.AppendLine(line);
-
-            if (state == ResponseState.Initial )
-            {
-                // first line with user input is ignored ?
-                state = ResponseState.AwaitingInput;
-            }
-            else if (state == ResponseState.AwaitingInput)
-            {
-                string str;
-                string cleanLine = RemoveAnsiEscapeSequences(line);
-                if (_responseProcessor.IsFunctionCallResponse(cleanLine))
-                {
-                    // call function send user llm output
-                    responseBuilder.Append($"Calling Function : {cleanLine}");
-                    //str = responseBuilder.ToString();
-                    responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
-                    responseServiceObj.LlmMessage = line;
-                    await _responseProcessor.ProcessLLMOutput(responseServiceObj);
-                    _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
-                    responseBuilder.Clear();
-                    responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
-                    responseServiceObj.IsFunctionCall = true;
-
-                    responseServiceObj.JsonFunction = cleanLine;
-
-                    await _responseProcessor.ProcessFunctionCall(responseServiceObj);
-                    state = ResponseState.FunctionCallProcessed;
-                    break;
-                }
-
-                // back to prompt finshed.
-                //str = responseBuilder.ToString();
-                responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
-                responseServiceObj.LlmMessage = line;
-                await _responseProcessor.ProcessLLMOutput(responseServiceObj);
-                responseBuilder.Clear();
-                //state = ResponseState.AwaitingInput;
-                if (line == "") emptyLineCount++;
-                if ( emptyLineCount==2)
-                {
-                    state = ResponseState.Completed;
-                    break;
-                }
 
 
-            }
-            else if (state == ResponseState.FunctionCallProcessed)
-            {
-                // after function call
-                var str = responseBuilder.ToString();
-                responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
-                responseServiceObj.LlmMessage = str;
-                await _responseProcessor.ProcessLLMOutput(responseServiceObj);
-                _logger.LogInformation($" ProcessLLMOutput(after_func_call) -> {str}");
-                responseBuilder.Clear();
-                state = ResponseState.Completed;
-                break;
-            }
-        }
+        await tokenBroadcaster.BroadcastAsync(process, serviceObj.SessionId, cancellationTokenSource.Token);
+
+        //cancellationTokenSource.Cancel();
         _logger.LogInformation(" --> Finshed LLM Interaction ");
         return string.Empty;
     }
@@ -214,7 +192,6 @@ public class ProcessWrapper
     public ProcessWrapper()
     {
         _process = new Process();
-
     }
 
     public ProcessWrapper(Process? process = null)
@@ -226,8 +203,8 @@ public class ProcessWrapper
     public virtual IStreamWriter StandardInput => new StreamWriterWrapper(_process.StandardInput);
     public virtual IStreamReader StandardOutput => new StreamReaderWrapper(_process.StandardOutput);
 
-
     public virtual ProcessStartInfo StartInfo => _process.StartInfo;
+    public virtual bool StandardOutputEndOfStream => _process.StandardOutput.EndOfStream;
 
     public virtual bool HasExited => _process.HasExited;
 
@@ -251,12 +228,18 @@ public class ProcessWrapper
         return _process.StandardInput.FlushAsync();
     }
 
+    public virtual async Task<int> ReadAsync(byte[] buffer, int offset, int count)
+    {
+        return await _process.StandardOutput.BaseStream.ReadAsync(buffer, offset, count);
+    }
+
     // Add any other methods or properties you need to mock
 }
 
 public interface IStreamReader
 {
     Task<string> ReadLineAsync();
+    Task<int> ReadAsync(byte[] buffer, int offset, int count);
     // Add other necessary methods from StreamReader
 }
 
@@ -266,6 +249,7 @@ public interface IStreamWriter
     Task FlushAsync();
     // Add other necessary methods from StreamWriter
 }
+
 public class StreamReaderWrapper : IStreamReader
 {
     private readonly StreamReader _innerStreamReader;
@@ -278,6 +262,11 @@ public class StreamReaderWrapper : IStreamReader
     public Task<string> ReadLineAsync()
     {
         return _innerStreamReader.ReadLineAsync();
+    }
+
+    public async Task<int> ReadAsync(byte[] buffer, int offset, int count)
+    {
+        return await _innerStreamReader.BaseStream.ReadAsync(buffer, offset, count);
     }
 
     // Implement other methods from IStreamReader if needed
@@ -304,4 +293,3 @@ public class StreamWriterWrapper : IStreamWriter
 
     // Implement other methods from IStreamWriter if needed
 }
-
