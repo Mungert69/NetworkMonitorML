@@ -60,6 +60,11 @@ public class LLMService : ILLMService
 
     public async Task<LLMServiceObj> SendInputAndGetResponse(LLMServiceObj serviceObj)
     {
+         if (serviceObj.SessionId==null) { 
+            serviceObj.ResultMessage="SessionId is null";
+            serviceObj.ResultSuccess = false;
+            return serviceObj;
+        }
         if (!_sessions.TryGetValue(serviceObj.SessionId, out var session)) { 
             serviceObj.ResultMessage="Invalid session ID";
             serviceObj.ResultSuccess = false;
@@ -124,7 +129,7 @@ public class LLMResponseProcessor : ILLMResponseProcessor
         try
         {
 
-    // Deserialize the modified JSON string
+    Console.WriteLine($"Parsing JSON: {input}");
      FunctionCallData functionCallData = JsonSerializer.Deserialize<FunctionCallData>(input);
 
 

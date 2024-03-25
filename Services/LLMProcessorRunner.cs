@@ -41,7 +41,7 @@ public class LLMProcessRunner : ILLMProcessRunner
     public void SetStartInfo(ProcessStartInfo startInfo, string modelPath)
     {
         startInfo.FileName = "/home/mahadeva/code/llama.cpp/build/bin/main";
-        startInfo.Arguments = "-c 6000  -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt --color -r \"User:\" --in-prefix \" \" -ins --keep -1 --temp 0";
+        startInfo.Arguments = "-c 6000  -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0";
         startInfo.UseShellExecute = false;
         startInfo.RedirectStandardInput = true;
        startInfo.RedirectStandardOutput = true;
@@ -80,7 +80,7 @@ public class LLMProcessRunner : ILLMProcessRunner
         while (!cancellationTokenSource.IsCancellationRequested)
         {
             line = await process.StandardOutput.ReadLineAsync();
-            if (line.StartsWith("<|im_end|>"))
+            if (line.StartsWith("<</SYS>>[/INST]"))
             {
                 isReady = true;
                 break;
@@ -96,6 +96,7 @@ public class LLMProcessRunner : ILLMProcessRunner
     }
 static string RemoveAnsiEscapeSequences(string input)
     {
+        
         input=System.Text.RegularExpressions.Regex.Replace(input, @"\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]", "");
           input = input.Replace("'", "");
         return input;
@@ -167,7 +168,7 @@ static string RemoveAnsiEscapeSequences(string input)
                     responseBuilder.Clear();
                     state = ResponseState.AwaitingInput;
                     break;
-                   // state = ResponseState.Completed;
+                   //state = ResponseState.Completed;
                 }
             }
             else if (state == ResponseState.FunctionCallProcessed)

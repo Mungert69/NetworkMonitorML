@@ -354,8 +354,8 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         {
             if (serviceObj.IsFunctionCallResponse) {
                 if (serviceObj.ResultSuccess)
-                serviceObj.UserInput = "FUNCTION RESPONSE : { \"message\" : \""+serviceObj.ResultMessage+"\" }";
-                else serviceObj.UserInput ="FUNCTION RESPONSE : { \"message\" : \" Failed "+serviceObj.ResultMessage+"\" }";
+                serviceObj.UserInput = "FUNCTION RESPONSE : { status : \"success\" , \"message\" : \""+serviceObj.ResultMessage+"\" }";
+                else serviceObj.UserInput ="FUNCTION RESPONSE : { status : \"error\" ,\"message\" : \""+serviceObj.ResultMessage+"\" }";
                 
             }
             var resultServiceObj = await _llmService.SendInputAndGetResponse(serviceObj);
@@ -368,6 +368,8 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             result.Success = false;
 
         }
+        if (result.Success) _logger.LogInformation(result.Message);
+        else _logger.LogError(result.Message);
         return result;
     }
 
