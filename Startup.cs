@@ -85,13 +85,6 @@ namespace NetworkMonitor.ML
                  .AddInitAction<IRabbitListener>((rabbitListener) =>
                     {
                         return Task.CompletedTask;
-                    })
-                     .AddInitAction<ILLMService>(async (llmService) =>
-                    {
-                        var llmServiceObj = new LLMServiceObj() { RequestSessionId = "test" };
-                        var serviceObj=await llmService.StartProcess(llmServiceObj);
-                        serviceObj.UserInput = "Add Host 192.168.1.2 using my email me@me.com";
-                        await llmService.SendInputAndGetResponse(serviceObj);
                     });
         }
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

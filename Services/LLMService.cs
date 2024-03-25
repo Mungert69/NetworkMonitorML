@@ -46,7 +46,7 @@ public class LLMService : ILLMService
             _sessions[llmServiceObj.SessionId] = new Session();
             llmServiceObj.ResultMessage = " Success : LLMService Started Session .";
             llmServiceObj.ResultSuccess = true;
-            await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceStart", llmServiceObj);
+            await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceStarted", llmServiceObj);
         }
         catch (Exception e)
         {
