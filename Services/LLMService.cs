@@ -17,6 +17,7 @@ namespace NetworkMonitor.ML.Services;
 public interface ILLMService
 {
     Task<LLMServiceObj> StartProcess(LLMServiceObj llmServiceObj);
+    LLMServiceObj RemoveProcess(LLMServiceObj llmServiceObj);
     Task<LLMServiceObj> SendInputAndGetResponse(LLMServiceObj serviceObj);
 }
 
@@ -57,6 +58,26 @@ public class LLMService : ILLMService
 
         return llmServiceObj;
     }
+
+     public  LLMServiceObj RemoveProcess(LLMServiceObj llmServiceObj)
+    {
+        try
+        {
+            _processRunner.RemoveProcess(llmServiceObj.SessionId);
+            _sessions[llmServiceObj.SessionId] = new Session();
+            llmServiceObj.ResultMessage = " Success : LLMService Removed Session .";
+            llmServiceObj.ResultSuccess = true;
+             }
+        catch (Exception e)
+        {
+            llmServiceObj.ResultMessage = e.Message;
+            llmServiceObj.ResultSuccess = false;
+         }
+
+
+        return llmServiceObj;
+    }
+
 
     public async Task<LLMServiceObj> SendInputAndGetResponse(LLMServiceObj serviceObj)
     {

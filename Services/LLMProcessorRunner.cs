@@ -18,6 +18,7 @@ public interface ILLMProcessRunner
 {
     Task StartProcess(string sessionId, string modelPath, ProcessWrapper? testProcess = null);
     Task<string> SendInputAndGetResponse(LLMServiceObj serviceObj);
+    void RemoveProcess(string sessionId);
 }
 
 public class LLMProcessRunner : ILLMProcessRunner
@@ -71,6 +72,33 @@ public class LLMProcessRunner : ILLMProcessRunner
         _logger.LogInformation($"LLM process started for session {sessionId}");
     }
 
+    public void RemoveProcess(string sessionId)
+    {
+        if (!_processes.TryGetValue(sessionId, out var process))
+            throw new Exception("Process is not running for this session");
+
+        _logger.LogInformation($" LLM Service : Remove Process for sessionsId {sessionId}");
+
+        try
+        {
+            if (!process.HasExited)
+            {
+
+                process.Kill();
+            }
+        }
+        finally
+        {
+            // Always dispose of the process object
+            process.Dispose();
+        }
+
+        _processes.Remove(sessionId);
+        _logger.LogInformation($"LLM process removed for session {sessionId}");
+    }
+
+
+
     private async Task WaitForReadySignal(ProcessWrapper process)
     {
         bool isReady = false;
@@ -96,9 +124,10 @@ public class LLMProcessRunner : ILLMProcessRunner
         }
         _logger.LogInformation($" LLMService Process Started ");
     }
-    private string RemoveAnsiEscapeSequences(string input)
+    private string ParseInput(string input)
     {
         _logger.LogInformation($" before -> {input} <-");
+        if (input.Contains("FUNCTION RESPONSE")) return string.Empty;
         string newLine = string.Empty;
         int startIndex = input.IndexOf('{');
         if (startIndex != -1)
@@ -141,7 +170,7 @@ public class LLMProcessRunner : ILLMProcessRunner
          }
          else if (state == ResponseState.AwaitingInput)
          {
-             string cleanLine = RemoveAnsiEscapeSequences(line);
+             string cleanLine = ParseInput(line);
              if (_responseProcessor.IsFunctionCallResponse(cleanLine))
              {
                  _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
@@ -207,6 +236,9 @@ public class ProcessWrapper
     public virtual bool StandardOutputEndOfStream => _process.StandardOutput.EndOfStream;
 
     public virtual bool HasExited => _process.HasExited;
+    public virtual void Kill() => _process.Kill();
+    public virtual void Dispose() => _process.Dispose();
+
 
     public virtual void Start()
     {

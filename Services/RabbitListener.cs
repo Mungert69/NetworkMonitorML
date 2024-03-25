@@ -86,6 +86,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             FuncName = "llmUserInput",
             MessageTimeout = 60000
         });
+         _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "llmRemoveSession",
+            FuncName = "llmRemoveSession",
+            MessageTimeout = 60000
+        });
+       
 
 
     }
@@ -187,6 +194,21 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     catch (Exception ex)
                     {
                         _logger.LogError(" Error : RabbitListener.DeclareConsumers.llmStartSession " + ex.Message);
+                    }
+                };
+                    break;
+                    case "llmRemoveSession":
+                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.Received += (model, ea) =>
+                {
+                    try
+                    {
+                        result = RemoveSession(ConvertToObject<LLMServiceObj>(model, ea));
+                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.llmRemoveSession " + ex.Message);
                     }
                 };
                     break;
@@ -339,6 +361,35 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
 
         return result;
     }
+
+     public ResultObj RemoveSession(LLMServiceObj? llmServiceObj)
+    {
+        var result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : RemoveSession : ";
+        if (llmServiceObj == null)
+        {
+            return new ResultObj() { Message = " Error : llmServiceObj is null." };
+        }
+
+        try
+        {
+            llmServiceObj =  _llmService.RemoveProcess(llmServiceObj);
+            result.Message = llmServiceObj.ResultMessage;
+            result.Success = llmServiceObj.ResultSuccess;
+
+
+        }
+        catch (Exception e)
+        {
+            result.Message = e.Message;
+            result.Success = false;
+        }
+
+
+        return result;
+    }
+
 
     public async Task<ResultObj> UserInput(LLMServiceObj? serviceObj)
     {
