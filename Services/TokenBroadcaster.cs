@@ -41,6 +41,14 @@ public class TokenBroadcaster
             //lineBuilder.Append(currentChar);
             tokenBuilder.Append(textChunk);
             Console.WriteLine(lineBuilder.ToString());
+             if (IsTokenComplete(tokenBuilder))
+            {
+                string token = tokenBuilder.ToString();
+                tokenBuilder.Clear();
+
+                var serviceObj = new LLMServiceObj { SessionId = sessionId, LlmMessage = token };
+                await _responseProcessor.ProcessLLMOutput(serviceObj);
+            }
 
             if (IsLineComplete(lineBuilder))
             {
@@ -50,14 +58,7 @@ public class TokenBroadcaster
                 LineReceived?.Invoke(this, line);
             }
 
-            if (IsTokenComplete(lineBuilder))
-            {
-                string token = tokenBuilder.ToString();
-                tokenBuilder.Clear();
-
-                var serviceObj = new LLMServiceObj { SessionId = sessionId, LlmMessage = token };
-                await _responseProcessor.ProcessLLMOutput(serviceObj);
-            }
+           
             if (charRead == -1)
             {
                 break;

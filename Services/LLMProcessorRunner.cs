@@ -164,12 +164,7 @@ public class LLMProcessRunner : ILLMProcessRunner
 
         tokenBroadcaster.LineReceived += async (sender, line) =>
      {
-         if (state == ResponseState.Initial)
-         {
-             state = ResponseState.AwaitingInput;
-         }
-         else if (state == ResponseState.AwaitingInput)
-         {
+         
              string cleanLine = ParseInput(line);
              if (_responseProcessor.IsFunctionCallResponse(cleanLine))
              {
@@ -190,12 +185,7 @@ public class LLMProcessRunner : ILLMProcessRunner
              }
 
 
-         }
-         else if (state == ResponseState.FunctionCallProcessed)
-         {
-             state = ResponseState.Completed;
-             cancellationTokenSource.Cancel();
-         }
+        
      };
 
 
