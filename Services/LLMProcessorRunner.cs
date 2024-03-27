@@ -138,7 +138,12 @@ public class LLMProcessRunner : ILLMProcessRunner
         {
             return newLine;
         }
-        // input=System.Text.RegularExpressions.Regex.Replace(input, @"\x1B\[([0-9]{1,2}(;[0-9]{1,2})?)?[m|K]", "");
+        int lastClosingBraceIndex = newLine.LastIndexOf('}');
+        if (lastClosingBraceIndex != -1)
+        {
+            newLine = newLine.Substring(0, lastClosingBraceIndex + 1); // Keep the last '}'
+        }
+
         newLine = newLine.Replace("'", "");
         _logger.LogInformation($" after -> {newLine} <-");
         return newLine;
@@ -164,17 +169,22 @@ public class LLMProcessRunner : ILLMProcessRunner
 
         tokenBroadcaster.LineReceived += async (sender, line) =>
         {
-             if (state == ResponseState.FunctionCallProcessed) {  cancellationTokenSource.Cancel();}
+            if (state == ResponseState.FunctionCallProcessed) { cancellationTokenSource.Cancel(); }
             string cleanLine = ParseInput(line);
             if (_responseProcessor.IsFunctionCallResponse(cleanLine))
             {
                 _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
                 responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+                responseServiceObj.LlmMessage = "<function-call>";
+                await _responseProcessor.ProcessLLMOutput(responseServiceObj);
+
+                responseServiceObj.LlmMessage = "";
                 responseServiceObj.IsFunctionCall = true;
-                responseServiceObj.JsonFunction = cleanLine;
+                responseServiceObj.JsonFunction = cleanLine;         
                 await _responseProcessor.ProcessFunctionCall(responseServiceObj);
                 state = ResponseState.FunctionCallProcessed;
-               
+                //cancellationTokenSource.Cancel();
+
             }
 
             if (line == "")
@@ -185,18 +195,19 @@ public class LLMProcessRunner : ILLMProcessRunner
             {
                 state = ResponseState.Completed;
                 cancellationTokenSource.Cancel();
+
             }
             responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
             responseServiceObj.LlmMessage = "<end-of-line>";
             await _responseProcessor.ProcessLLMOutput(responseServiceObj);
-           
+
         };
 
-       
+
         await process.StandardInput.WriteLineAsync(serviceObj.UserInput);
         await process.StandardInput.FlushAsync();
         _logger.LogInformation($" ProcessLLMOutput(user input) -> {serviceObj.UserInput}");
-         await tokenBroadcaster.BroadcastAsync(process, serviceObj.SessionId, cancellationTokenSource.Token);
+        await tokenBroadcaster.BroadcastAsync(process, serviceObj.SessionId, cancellationTokenSource.Token);
 
 
 

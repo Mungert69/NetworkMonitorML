@@ -61,10 +61,10 @@ public class TokenBroadcaster
             }
 
            
-            if (charRead == -1)
+           /* if (charRead == -1)
             {
                 break;
-            }// End of stream
+            }// End of stream*/
         }
         _logger.LogInformation(" --> Finshed LLM Interaction ");
     }
