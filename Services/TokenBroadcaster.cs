@@ -15,10 +15,12 @@ namespace NetworkMonitor.ML.Services;
 public class TokenBroadcaster
 {
     private readonly ILLMResponseProcessor _responseProcessor;
+    private readonly ILogger _logger;
     public event EventHandler<string> LineReceived;
-    public TokenBroadcaster(ILLMResponseProcessor responseProcessor)
+    public TokenBroadcaster(ILLMResponseProcessor responseProcessor, ILogger logger)
     {
         _responseProcessor = responseProcessor;
+        _logger = logger;
     }
 
     public async Task BroadcastAsync(ProcessWrapper process, string sessionId, CancellationToken cancellationToken)
@@ -64,6 +66,7 @@ public class TokenBroadcaster
                 break;
             }// End of stream
         }
+        _logger.LogInformation(" --> Finshed LLM Interaction ");
     }
     private bool IsLineComplete(StringBuilder lineBuilder)
     {

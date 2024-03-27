@@ -127,7 +127,7 @@ public class LLMProcessRunner : ILLMProcessRunner
     private string ParseInput(string input)
     {
         _logger.LogInformation($" before -> {input} <-");
-        if (input.Contains("FUNCTION RESPONSE")) return string.Empty;
+        if (input.Contains("FUNCTION RESPONSE")) return input;
         string newLine = string.Empty;
         int startIndex = input.IndexOf('{');
         if (startIndex != -1)
@@ -160,45 +160,48 @@ public class LLMProcessRunner : ILLMProcessRunner
         var cancellationTokenSource = new CancellationTokenSource();
 
         // Create an instance of the TokenBroadcaster
-        var tokenBroadcaster = new TokenBroadcaster(_responseProcessor);
+        var tokenBroadcaster = new TokenBroadcaster(_responseProcessor, _logger);
 
         tokenBroadcaster.LineReceived += async (sender, line) =>
-     {
-         
-             string cleanLine = ParseInput(line);
-             if (_responseProcessor.IsFunctionCallResponse(cleanLine))
-             {
-                 _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
-                 responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
-                 responseServiceObj.IsFunctionCall = true;
-                 responseServiceObj.JsonFunction = cleanLine;
-                 await _responseProcessor.ProcessFunctionCall(responseServiceObj);
-                 state = ResponseState.FunctionCallProcessed;
-                 cancellationTokenSource.Cancel();
-             }
+        {
+             if (state == ResponseState.FunctionCallProcessed) {  cancellationTokenSource.Cancel();}
+            string cleanLine = ParseInput(line);
+            if (_responseProcessor.IsFunctionCallResponse(cleanLine))
+            {
+                _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
+                responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+                responseServiceObj.IsFunctionCall = true;
+                responseServiceObj.JsonFunction = cleanLine;
+                await _responseProcessor.ProcessFunctionCall(responseServiceObj);
+                state = ResponseState.FunctionCallProcessed;
+               
+            }
 
-             if (line == "") emptyLineCount++;
-             if (emptyLineCount == 2)
-             {
-                 state = ResponseState.Completed;
-                 cancellationTokenSource.Cancel();
-             }
+            if (line == "")
+            {
+                emptyLineCount++;
+            }
+            if (emptyLineCount == 2)
+            {
+                state = ResponseState.Completed;
+                cancellationTokenSource.Cancel();
+            }
+            responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+            responseServiceObj.LlmMessage = "<end-of-line>";
+            await _responseProcessor.ProcessLLMOutput(responseServiceObj);
+           
+        };
 
-
-        
-     };
-
-
-
+       
         await process.StandardInput.WriteLineAsync(serviceObj.UserInput);
         await process.StandardInput.FlushAsync();
         _logger.LogInformation($" ProcessLLMOutput(user input) -> {serviceObj.UserInput}");
+         await tokenBroadcaster.BroadcastAsync(process, serviceObj.SessionId, cancellationTokenSource.Token);
 
 
-        await tokenBroadcaster.BroadcastAsync(process, serviceObj.SessionId, cancellationTokenSource.Token);
 
         //cancellationTokenSource.Cancel();
-        _logger.LogInformation(" --> Finshed LLM Interaction ");
+
         return string.Empty;
     }
 }
