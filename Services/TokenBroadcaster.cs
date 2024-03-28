@@ -42,7 +42,7 @@ public class TokenBroadcaster
 
             //lineBuilder.Append(currentChar);
             tokenBuilder.Append(textChunk);
-            Console.WriteLine(lineBuilder.ToString());
+            //Console.WriteLine(lineBuilder.ToString());
              if (IsTokenComplete(tokenBuilder))
             {
                 string token = tokenBuilder.ToString();
@@ -55,6 +55,7 @@ public class TokenBroadcaster
             if (IsLineComplete(lineBuilder))
             {
                 string line = lineBuilder.ToString().Trim();
+                Console.WriteLine($"sessionID={sessionId} line is {line}");
                 lineBuilder.Clear();
 
                 LineReceived?.Invoke(this, line);
