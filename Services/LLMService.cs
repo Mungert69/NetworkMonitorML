@@ -148,7 +148,7 @@ public class LLMResponseProcessor : ILLMResponseProcessor
     {
         try
         {
-
+            if (input == "") return false;
             FunctionCallData functionCallData = JsonSerializer.Deserialize<FunctionCallData>(input);
             return true;
         }

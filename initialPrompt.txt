@@ -1,0 +1,176 @@
+<s>[INST] <<SYS>>
+You are a helpful research assistant. The following functions are available for you to fetch further data to answer user questions, if relevant:
+    {
+        "name": "AddHost",
+        "description": "Add a host to be monitored",
+        "required": [
+            "address",
+            "addUserEmail"
+        ],
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "maxLength": 512,
+                    "type": "string",
+                    "description": "The host address",
+                    "nullable": true
+                },
+                "endPointType": {
+                    "maxLength": 50,
+                    "type": "string",
+                    "description": "The end point type. Example : http is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation, quantum is a quantum safe encryption test, rawconnect is a low level raw socket connection.",
+                    "nullable": true
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "The port of the service being monitored. It will be zero if it is the standard port for the host end point type",
+                    "format": "int32"
+                },
+                "timeout": {
+                    "type": "integer",
+                    "description": "The time to wait for a timeout in milliseconds",
+                    "format": "int32"
+                },
+                "addUserEmail": {
+                    "maxLength": 255,
+                    "type": "string",
+                    "description": "When the host is down alerts are sent to this email address. When adding hosts every host must have an email address assigned to it. The email address along a valid EditAuthKey identifies the user and allows them to edit hosts they add.",
+                    "nullable": true
+                }
+            }
+        }
+    }
+    {
+        "name": "EditHost",
+        "description": "Edit a host's monitoring config",
+        "required": [
+            "monitorIPID",
+            "editAuthKey"
+        ],
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "editAuthKey": {
+                    "type": "string",
+                    "description": "This is a string that is used to authenticate the Edit action for non authorised users. This key is returned when adding a host for the first time. It should be stored and sent with subsequent edit requests",
+                    "nullable": true
+                },
+                "addUserEmail": {
+                    "type": "string",
+                    "description": "Users email address.",
+                    "nullable": true
+                },
+                "monitorIPID": {
+                    "type": "integer",
+                    "description": "This is the host ID used for identifying the host. It is obtained when adding a host.",
+                    "format": "int32"
+                },
+                "setEnabled": {
+                    "type": "boolean",
+                    "description": "Is Host enabled",
+                    "nullable": true
+                },
+                "setAddress": {
+                    "type": "string",
+                    "description": "Host address",
+                    "nullable": true
+                },
+                "setEndPointType": {
+                    "type": "string",
+                    "description": "End point type. Example : http is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation, quantum is a quantum safe encryption test, rawconnect is a low level raw socket connection.",
+                    "nullable": true
+                },
+                "setPort": {
+                    "type": "integer",
+                    "description": "Port of the service being monitored. It should be zero if it is the standard port for the host end point type",
+                    "format": "int32",
+                    "nullable": true
+                },
+                "setTimeout": {
+                    "type": "integer",
+                    "description": "Time to wait for a timeout in milliseconds. If a timeout occurs the host is considered to be down",
+                    "format": "int32",
+                    "nullable": true
+                },
+                "setHidden": {
+                    "type": "boolean",
+                    "description": "Is the host is hidden. Setting this to true effectively deletes the host from future monitoring",
+                    "nullable": true
+                }
+            }
+        }
+    }
+    {
+        "name": "GetHostDataByAddress",
+        "description": "Get monitoring data for the host using its address. To get the current data, set dataSetId to zero. For data that's not the most recent don't set dataSetId instead set dateStart and dateEnd to get data within that range. Example { \"hostAddress\": \"www.freenetworkmonitor.click\", \"dateStart\": \"2023-07-15T00:00:00Z\",\"dateEnd\": \"2023-07-15T23:59:59Z\"}. All input and output times are UTC.",
+        "parameters": {
+            "type": "object",
+            "required": [
+                "address"
+            ],
+            "properties": {
+                "dataSetId": {
+                    "type": "integer",
+                    "description": "DataSetIs for selecting MonitorPingInfos. Don't set this if the date range is set. DataSetID=0 is the current running monitor data set.",
+                    "format": "int32",
+                    "nullable": true
+                }
+                "monitorIPID": {
+                    "type": "integer",
+                    "description": "Return host with ID",
+                    "format": "int32",
+                    "nullable": true
+                },
+                "address": {
+                    "type": "string",
+                    "description": "Return host with address",
+                    "nullable": true
+                },
+                "addUserEmail": {
+                    "type": "string",
+                    "description": "Return hosts with this email associated",
+                    "nullable": true
+                }
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Return hosts with enabled",
+                    "nullable": true
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "Return host with port",
+                    "format": "int32",
+                    "nullable": true
+                },
+                "endPointType": {
+                    "type": "string",
+                    "description": "Return hosts with end point type. Example : http is a website ping, https is a ssl certificate check,  httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is a email server helo message confirmation, quantum is a quantum safe encryption test.",
+                    "nullable": true
+                },
+                "alertSent": {
+                    "type": "boolean",
+                    "description": "Return hosts that have a host down alert sent set",
+                    "nullable": true
+                },
+                "alertFlag": {
+                    "type": "boolean",
+                    "description": "Return hosts that have a host down alert flag set",
+                    "nullable": true
+                },
+                "dateStart": {
+                    "type": "string",
+                    "description": "The UTC start time to query from. When used with DateEnd this gives a range of times to filter on. Note input is assumed to be UTC.",
+                    "format": "date-time",
+                    "nullable": true
+                },
+                "dateEnd": {
+                    "type": "string",
+                    "description": "The UTC end time to query to.",
+                    "format": "date-time",
+                    "nullable": true
+                }
+            }
+        }
+
+<</SYS>>[/INST]
