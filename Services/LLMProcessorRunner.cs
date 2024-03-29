@@ -31,7 +31,7 @@ public class LLMProcessRunner : ILLMProcessRunner
     public void SetStartInfo(ProcessStartInfo startInfo, string modelPath)
     {
         startInfo.FileName = "/home/mahadeva/code/llama.cpp/build/bin/main";
-        startInfo.Arguments = "-c 6000 -n 1000 -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0";
+        startInfo.Arguments = "-c 6000 -n 6000 -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --reverse-prompt \"User:\" --temp 0";
         startInfo.UseShellExecute = false;
         startInfo.RedirectStandardInput = true;
         startInfo.RedirectStandardOutput = true;
@@ -124,7 +124,7 @@ public class LLMProcessRunner : ILLMProcessRunner
     }
     public async Task<string> SendInputAndGetResponse(LLMServiceObj serviceObj)
     {
-        var responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
+        var responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId, UserInput=serviceObj.UserInput };
         if (!_processes.TryGetValue(serviceObj.SessionId, out var process))
             throw new Exception("No process found for the given session");
         _logger.LogInformation($"  LLMService : SendInputAndGetResponse() :");
@@ -140,13 +140,13 @@ public class LLMProcessRunner : ILLMProcessRunner
         var tokenBroadcaster = new TokenBroadcaster(_responseProcessor, _logger);
         tokenBroadcaster.LineReceived += async (sender, line) =>
         {
-            if (state == ResponseState.FunctionCallProcessed) { cancellationTokenSource.Cancel(); }
+            //if (state == ResponseState.FunctionCallProcessed) { cancellationTokenSource.Cancel(); }
             string cleanLine = ParseInput(line);
             if (_responseProcessor.IsFunctionCallResponse(cleanLine))
             {
                 _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
-                responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId };
-                responseServiceObj.LlmMessage = "<function-call>";
+                responseServiceObj = new LLMServiceObj() { SessionId = serviceObj.SessionId , UserInput=serviceObj.UserInput};
+                responseServiceObj.LlmMessage = "</functioncall>";
                 await _responseProcessor.ProcessLLMOutput(responseServiceObj);
                 responseServiceObj.LlmMessage = "";
                 responseServiceObj.IsFunctionCall = true;
@@ -159,7 +159,7 @@ public class LLMProcessRunner : ILLMProcessRunner
             {
                 emptyLineCount++;
             }
-            if (emptyLineCount == 2)
+            if (emptyLineCount == 2 || line==">")
             {
                 state = ResponseState.Completed;
                 cancellationTokenSource.Cancel();

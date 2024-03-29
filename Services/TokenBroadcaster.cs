@@ -16,7 +16,8 @@ public class TokenBroadcaster
 {
     private readonly ILLMResponseProcessor _responseProcessor;
     private readonly ILogger _logger;
-    public event EventHandler<string> LineReceived;
+    public event Func<object, string, Task> LineReceived;
+
     public TokenBroadcaster(ILLMResponseProcessor responseProcessor, ILogger logger)
     {
         _responseProcessor = responseProcessor;
@@ -55,10 +56,9 @@ public class TokenBroadcaster
             if (IsLineComplete(lineBuilder))
             {
                 string line = lineBuilder.ToString().Trim();
-                Console.WriteLine($"sessionID={sessionId} line is {line}");
-                lineBuilder.Clear();
-
-                LineReceived?.Invoke(this, line);
+                Console.WriteLine($"sessionID={sessionId} line is =>{line}<=");
+                await LineReceived.Invoke(this, line);
+                 lineBuilder.Clear();
             }
 
            
