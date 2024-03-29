@@ -36,8 +36,8 @@ public abstract class MLModel : IMLModel
         }
   public virtual void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
   {
-    Console.WriteLine($"Confidence set at {Confidence}");
-    Console.WriteLine("Alert\tScore\tP-Value");
+    //Console.WriteLine($"Confidence set at {Confidence}");
+    //Console.WriteLine("Alert\tScore\tP-Value");
     foreach (var p in predictions)
     {
       if (p.Prediction is not null)
@@ -49,7 +49,7 @@ public abstract class MLModel : IMLModel
           results += " <-- alert is on, predicted spike";
           //anomalyDetected=true;
         }
-        Console.WriteLine(results);
+        //Console.WriteLine(results);
       }
     }
   }

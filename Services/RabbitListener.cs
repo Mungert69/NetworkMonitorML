@@ -416,8 +416,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             result.Success = false;
 
         }
-        if (result.Success) _logger.LogInformation(result.Message);
-        else _logger.LogError(result.Message);
+        if (!result.Success) _logger.LogError(result.Message);
         return result;
     }
 

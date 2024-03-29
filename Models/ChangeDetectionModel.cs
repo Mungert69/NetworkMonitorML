@@ -34,8 +34,8 @@ namespace NetworkMonitor.ML.Model
         public override void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
         {
 
-            Console.WriteLine($"Confidence set at {Confidence}");
-            Console.WriteLine("Alert\tScore\tP-Value\tMartingale value");
+            //Console.WriteLine($"Confidence set at {Confidence}");
+            //Console.WriteLine("Alert\tScore\tP-Value\tMartingale value");
             foreach (var p in predictions)
             {
                 if (p.Prediction is not null)
@@ -47,10 +47,10 @@ namespace NetworkMonitor.ML.Model
                         results += " <-- alert is on, predicted changepoint";
                         //anomalyDetected=true;
                     }
-                    Console.WriteLine(results);
+                    //Console.WriteLine(results);
                 }
             }
-            Console.WriteLine("");
+            //Console.WriteLine("");
 
         }
         public override void Train(List<LocalPingInfo> data)
