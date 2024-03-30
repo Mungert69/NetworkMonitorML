@@ -34,7 +34,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
     protected IMonitorMLService _mlService;
     protected ILLMService _llmService;
 
-    public RabbitListener(IMonitorMLService mlService,ILLMService llmService, ILogger<RabbitListenerBase> logger, ISystemParamsHelper systemParamsHelper) : base(logger, DeriveSystemUrl(systemParamsHelper))
+    public RabbitListener(IMonitorMLService mlService, ILLMService llmService, ILogger<RabbitListenerBase> logger, ISystemParamsHelper systemParamsHelper) : base(logger, DeriveSystemUrl(systemParamsHelper))
     {
 
         _mlService = mlService;
@@ -86,13 +86,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             FuncName = "llmUserInput",
             MessageTimeout = 60000
         });
-         _rabbitMQObjs.Add(new RabbitMQObj()
+        _rabbitMQObjs.Add(new RabbitMQObj()
         {
             ExchangeName = "llmRemoveSession",
             FuncName = "llmRemoveSession",
             MessageTimeout = 60000
         });
-       
+
 
 
     }
@@ -197,7 +197,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     }
                 };
                     break;
-                    case "llmRemoveSession":
+                case "llmRemoveSession":
                     rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
                     rabbitMQObj.Consumer.Received += (model, ea) =>
                 {
@@ -249,6 +249,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         if (serviceObj == null)
         {
             result.Message += " Error : serviceObj is null.";
+            _logger.LogError(result.Message);
             return result;
         }
         try
@@ -270,9 +271,14 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         var tResult = new TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>();
         tResult.Success = false;
         tResult.Message = "MessageAPI : CheckHost : ";
+        var result = new ResultObj();
         if (checkHostObj == null)
         {
-            return new ResultObj() { Message = " Error : chechHostObj is null." };
+            result.Message += tResult.Message + "Error : chechHostObj is null";
+            _logger.LogError(result.Message);
+            result.Success = false;
+            return result;
+
         }
 
         try
@@ -286,7 +292,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             tResult.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
             _logger.LogError(tResult.Message);
         }
-        var result = new ResultObj() { Success = tResult.Success, Message = tResult.Message, Data = tResult.Data };
+        result = new ResultObj() { Success = tResult.Success, Message = tResult.Message, Data = tResult.Data };
         return result;
     }
 
@@ -318,20 +324,22 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         if (processorDataObj == null)
         {
             result.Message += " Error : processorDataObj is null.";
+            _logger.LogError(result.Message);
             return result;
         }
         try
         {
             result = _mlService.UpdatePingInfos(processorDataObj);
-            _logger.LogInformation(result.Message);
         }
         catch (Exception e)
         {
             result.Data = null;
             result.Success = false;
             result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
-            _logger.LogError(result.Message);
+
         }
+        if (result.Success) _logger.LogInformation(result.Message);
+        else _logger.LogError(result.Message);
         return result;
     }
     public async Task<ResultObj> StartSession(LLMServiceObj? llmServiceObj)
@@ -341,7 +349,10 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         result.Message = "MessageAPI : StartSession : ";
         if (llmServiceObj == null)
         {
-            return new ResultObj() { Message = " Error : llmServiceObj is null." };
+            result.Message += " Error : llmServiceObj is null.";
+            _logger.LogError(result.Message);
+            result.Success = false;
+            return result;
         }
 
         try
@@ -358,11 +369,12 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             result.Success = false;
         }
 
-
+        if (result.Success) _logger.LogInformation(result.Message);
+        else _logger.LogError(result.Message);
         return result;
     }
 
-     public ResultObj RemoveSession(LLMServiceObj? llmServiceObj)
+    public ResultObj RemoveSession(LLMServiceObj? llmServiceObj)
     {
         var result = new ResultObj();
         result.Success = false;
@@ -374,7 +386,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
 
         try
         {
-            llmServiceObj =  _llmService.RemoveProcess(llmServiceObj);
+            llmServiceObj = _llmService.RemoveProcess(llmServiceObj);
             result.Message = llmServiceObj.ResultMessage;
             result.Success = llmServiceObj.ResultSuccess;
 
@@ -386,7 +398,8 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             result.Success = false;
         }
 
-
+        if (result.Success) _logger.LogInformation(result.Message);
+        else _logger.LogError(result.Message);
         return result;
     }
 
@@ -396,19 +409,24 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         var result = new ResultObj();
         result.Success = false;
         result.Message = "MessageAPI : UserInput : ";
+        _logger.LogInformation($" Start User Input {serviceObj!.UserInput}");
         if (serviceObj == null)
         {
-            return new ResultObj() { Message = " Error : serviceObj is null." };
+            result.Message += " Error : serviceObj is null.";
+            _logger.LogError(result.Message);
+            result.Success = false;
+            return result;
         }
 
         try
         {
-            if (serviceObj.IsFunctionCallResponse) {
-                serviceObj.UserInput = "FUNCTION RESPONSE: "+serviceObj.UserInput;     
+            if (serviceObj.IsFunctionCallResponse)
+            {
+                serviceObj.UserInput = "FUNCTION RESPONSE: " + serviceObj.UserInput;
             }
-            var resultServiceObj = await _llmService.SendInputAndGetResponse(serviceObj);
-            result.Message = resultServiceObj.ResultMessage;
-            result.Success = resultServiceObj.ResultSuccess;
+            var resultService = await _llmService.SendInputAndGetResponse(serviceObj);
+            result.Message += resultService.Message;
+            result.Success = resultService.Success;
         }
         catch (Exception e)
         {
@@ -416,7 +434,8 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             result.Success = false;
 
         }
-        if (!result.Success) _logger.LogError(result.Message);
+        if (result.Success) _logger.LogInformation(result.Message);
+        else _logger.LogError(result.Message);
         return result;
     }
 

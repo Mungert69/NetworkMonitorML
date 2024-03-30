@@ -158,7 +158,7 @@ public class MonitorMLService : IMonitorMLService
     public async Task<TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>> CheckLatestHostsTest()
     {
         TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>> result = new TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>();
-        result.Message = " SERVICE : CheckLatestHost : ";
+        result.Message = " SERVICE : CheckLatestHosts : ";
 
         try
         {
@@ -205,8 +205,6 @@ public class MonitorMLService : IMonitorMLService
             _logger.LogError(result.Message);
         }
 
-        if (result.Success) _logger.LogInformation(result.Message);
-        else _logger.LogError(result.Message);
         _isRunning = false;
         return result;
     }
@@ -660,7 +658,7 @@ public class MonitorMLService : IMonitorMLService
             result.Success = true;
 
 
-            _logger.LogInformation(result.Message);
+           // _logger.LogInformation(result.Message);
         }
         catch (Exception e)
         {

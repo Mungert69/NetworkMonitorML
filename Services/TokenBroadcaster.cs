@@ -16,34 +16,27 @@ public class TokenBroadcaster
     private readonly ILogger _logger;
     public event Func<object, string, Task> LineReceived;
     private CancellationTokenSource _cancellationTokenSource;
-    private LLMServiceObj _inputServiceObj;
-    private Task _currentBroadcastTask;
+  
 
-    public TokenBroadcaster(ILLMResponseProcessor responseProcessor, ILogger logger, LLMServiceObj inputServiceObj)
+    public TokenBroadcaster(ILLMResponseProcessor responseProcessor, ILogger logger)
     {
         _responseProcessor = responseProcessor;
         _logger = logger;
         _cancellationTokenSource = new CancellationTokenSource();
-        _inputServiceObj = inputServiceObj;
 
     }
 
 
-    public async Task ReInit(LLMServiceObj serviceObj)
+    public async Task ReInit(string sessionId)
     {
            _logger.LogInformation(" Cancel due to ReInit called ");
                 
         await _cancellationTokenSource.CancelAsync();
-       if (_currentBroadcastTask != null)
-                await _currentBroadcastTask;
-     
-        _inputServiceObj = serviceObj;
+      
     }
-    public async Task BroadcastAsync(ProcessWrapper process, string sessionId)
+    public async Task BroadcastAsync(ProcessWrapper process, string sessionId, string userInput)
     {
         _logger.LogWarning(" Start BroadcastAsyc() ");
-        _currentBroadcastTask = Task.Run(async () =>
-   {
        var lineBuilder = new StringBuilder();
        var tokenBuilder = new StringBuilder();
        int emptyLineCount = 0;
@@ -77,7 +70,7 @@ public class TokenBroadcaster
            {
                string line = lineBuilder.ToString();
                _logger.LogInformation($"sessionID={sessionId} line is =>{line}<=");
-                await ProcessLine(line);
+                await ProcessLine(line,sessionId,userInput);
                if (line == "\n")
                {
                    emptyLineCount++;
@@ -102,8 +95,8 @@ public class TokenBroadcaster
        }
        _logger.LogInformation(" --> Finshed LLM Interaction ");
 
-   });
-        await _currentBroadcastTask;
+   
+        //await _currentBroadcastTask;
     }
     private bool IsLineComplete(StringBuilder lineBuilder)
     {
@@ -120,14 +113,14 @@ public class TokenBroadcaster
         return false;
     }
 
-    private async Task ProcessLine(string line)
+    private async Task ProcessLine(string line, string sessionId, string userInput)
     {
         LLMServiceObj responseServiceObj;
         string cleanLine = ParseInput(line);
         if (_responseProcessor.IsFunctionCallResponse(cleanLine))
         {
             _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
-            responseServiceObj = new LLMServiceObj() { SessionId = _inputServiceObj.SessionId, UserInput = _inputServiceObj.UserInput };
+            responseServiceObj = new LLMServiceObj() { SessionId = sessionId, UserInput = userInput };
             responseServiceObj.LlmMessage = "</functioncall>";
             await _responseProcessor.ProcessLLMOutput(responseServiceObj);
             responseServiceObj.LlmMessage = "";
@@ -136,7 +129,7 @@ public class TokenBroadcaster
             await _responseProcessor.ProcessFunctionCall(responseServiceObj);
         }
 
-        responseServiceObj = new LLMServiceObj() { SessionId = _inputServiceObj.SessionId };
+        responseServiceObj = new LLMServiceObj() { SessionId = sessionId };
         responseServiceObj.LlmMessage = "<end-of-line>";
         await _responseProcessor.ProcessLLMOutput(responseServiceObj);
 

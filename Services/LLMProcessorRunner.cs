@@ -6,6 +6,7 @@ using System.Threading;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using NetworkMonitor.Objects.ServiceMessage;
 namespace NetworkMonitor.ML.Services;
@@ -13,14 +14,14 @@ namespace NetworkMonitor.ML.Services;
 public interface ILLMProcessRunner
 {
     Task StartProcess(string sessionId, string modelPath, ProcessWrapper? testProcess = null);
-    Task<string> SendInputAndGetResponse(LLMServiceObj serviceObj);
+    Task SendInputAndGetResponse(string sessionId, string userInput);
     void RemoveProcess(string sessionId);
 }
 public class LLMProcessRunner : ILLMProcessRunner
 {
     //private ProcessWrapper _llamaProcess;
-    private readonly Dictionary<string, ProcessWrapper> _processes = new Dictionary<string, ProcessWrapper>();
-    private readonly Dictionary<string, TokenBroadcaster> _tokenBroadcasters = new Dictionary<string, TokenBroadcaster>();
+    private readonly ConcurrentDictionary<string, ProcessWrapper> _processes = new ConcurrentDictionary<string, ProcessWrapper>();
+    private readonly ConcurrentDictionary<string, TokenBroadcaster> _tokenBroadcasters = new ConcurrentDictionary<string, TokenBroadcaster>();
 
     private ILogger _logger;
     private ILLMResponseProcessor _responseProcessor;
@@ -76,7 +77,10 @@ public class LLMProcessRunner : ILLMProcessRunner
             // Always dispose of the process object
             process.Dispose();
         }
-        _processes.Remove(sessionId);
+       // _processes.TryRemove(sessionId);
+
+ _processes.TryRemove(sessionId, out _);
+
         _logger.LogInformation($"LLM process removed for session {sessionId}");
     }
     private async Task WaitForReadySignal(ProcessWrapper process)
@@ -101,11 +105,11 @@ public class LLMProcessRunner : ILLMProcessRunner
         }
         _logger.LogInformation($" LLMService Process Started ");
     }
-    public async Task<string> SendInputAndGetResponse(LLMServiceObj serviceObj)
+    public async Task SendInputAndGetResponse(string sessionId, string userInput)
     {
         _logger.LogInformation($"  LLMService : SendInputAndGetResponse() :");
 
-        if (!_processes.TryGetValue(serviceObj.SessionId, out var process))
+        if (!_processes.TryGetValue(sessionId, out var process))
             throw new Exception("No process found for the given session");
 
         if (process == null || process.HasExited)
@@ -114,36 +118,21 @@ public class LLMProcessRunner : ILLMProcessRunner
         }
 
         TokenBroadcaster tokenBroadcaster;
-        if (_tokenBroadcasters.TryGetValue(serviceObj.SessionId, out tokenBroadcaster))
+        if (_tokenBroadcasters.TryGetValue(sessionId, out tokenBroadcaster))
         {
-            await tokenBroadcaster.ReInit(serviceObj);
+            await tokenBroadcaster.ReInit(sessionId);
         }
         else
         {
-            tokenBroadcaster = new TokenBroadcaster(_responseProcessor, _logger, serviceObj);
+            tokenBroadcaster = new TokenBroadcaster(_responseProcessor, _logger);
         }
-        try
-        {
-            // Acquire the semaphore (wait for the semaphore if it's not available)
-            //_logger.LogInformation($" Wating for Semiphore..");
-       
-            //await _inputStreamSemaphore.WaitAsync();
-            await process.StandardInput.WriteLineAsync(serviceObj.UserInput);
+          await process.StandardInput.WriteLineAsync(userInput);
             await process.StandardInput.FlushAsync();
-            _logger.LogInformation($" ProcessLLMOutput(user input) -> {serviceObj.UserInput}");
-        }
-        catch
-        {
-            throw;
-        }
-        finally
-        {
-            // Release the semaphore
-            //_inputStreamSemaphore.Release();
-        }
-        await tokenBroadcaster.BroadcastAsync(process, serviceObj.SessionId);
-        //cancellationTokenSource.Cancel();
-        return string.Empty;
+            _logger.LogInformation($" ProcessLLMOutput(user input) -> {userInput}");
+       
+        
+        await tokenBroadcaster.BroadcastAsync(process, sessionId, userInput);
+     
     }
 }
 

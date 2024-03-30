@@ -6,6 +6,7 @@ using System.Threading;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using NetworkMonitor.Objects;
 using NetworkMonitor.Objects.ServiceMessage;
@@ -18,7 +19,7 @@ public interface ILLMService
 {
     Task<LLMServiceObj> StartProcess(LLMServiceObj llmServiceObj);
     LLMServiceObj RemoveProcess(LLMServiceObj llmServiceObj);
-    Task<LLMServiceObj> SendInputAndGetResponse(LLMServiceObj serviceObj);
+    Task<ResultObj> SendInputAndGetResponse(LLMServiceObj serviceObj);
 }
 
 public class LLMService : ILLMService
@@ -27,7 +28,7 @@ public class LLMService : ILLMService
     private readonly ILLMProcessRunner _processRunner;
         private IRabbitRepo _rabbitRepo;
 
-    private readonly Dictionary<string, Session> _sessions = new Dictionary<string, Session>();
+    private readonly ConcurrentDictionary<string, Session> _sessions = new ConcurrentDictionary<string, Session>();
     // private readonly ILLMResponseProcessor _responseProcessor;
 
     public LLMService(ILogger<LLMService> logger, ILLMProcessRunner processRunner, IRabbitRepo rabbitRepo)
@@ -79,33 +80,33 @@ public class LLMService : ILLMService
     }
 
 
-    public async Task<LLMServiceObj> SendInputAndGetResponse(LLMServiceObj serviceObj)
+    public async Task<ResultObj> SendInputAndGetResponse(LLMServiceObj serviceObj)
     {
+        var result = new ResultObj();
          if (serviceObj.SessionId==null) { 
-            serviceObj.ResultMessage="SessionId is null";
-            serviceObj.ResultSuccess = false;
-            return serviceObj;
+            result.Message="SessionId is null";
+            result.Success = false;
+            return result;
         }
         if (!_sessions.TryGetValue(serviceObj.SessionId, out var session)) { 
-            serviceObj.ResultMessage="Invalid session ID";
-            serviceObj.ResultSuccess = false;
-            return serviceObj;
+            result.Message="Invalid session ID";
+            result.Success = false;
+            return result;
         }
 
         try { 
-            var resultServiceObj= await _processRunner.SendInputAndGetResponse(serviceObj);
+            await _processRunner.SendInputAndGetResponse(serviceObj.SessionId, serviceObj.UserInput);
         }
         catch (Exception e) {
-            serviceObj.ResultMessage = e.Message;
-            serviceObj.ResultSuccess = false;
-            return serviceObj;
+            result.Message += $" Error : failed to send and process user input {e.Message}";
+            result.Success = false;
         }
-        return serviceObj;
+        return result;
     }
 
      public void EndSession(string sessionId)
     {
-        _sessions.Remove(sessionId);
+          _sessions.TryRemove(sessionId, out _);
     }
 }
 
