@@ -96,6 +96,8 @@ public class LLMService : ILLMService
 
         try { 
             await _processRunner.SendInputAndGetResponse(serviceObj.SessionId, serviceObj.UserInput);
+            result.Message = " Processed UserInput :"+serviceObj.UserInput;
+            result.Success = true;
         }
         catch (Exception e) {
             result.Message += $" Error : failed to send and process user input {e.Message}";

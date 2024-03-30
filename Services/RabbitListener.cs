@@ -410,9 +410,16 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         result.Success = false;
         result.Message = "MessageAPI : UserInput : ";
         _logger.LogInformation($" Start User Input {serviceObj!.UserInput}");
-        if (serviceObj == null)
+        if (serviceObj == null )
         {
             result.Message += " Error : serviceObj is null.";
+            _logger.LogError(result.Message);
+            result.Success = false;
+            return result;
+        }
+          if (serviceObj.UserInput == "" )
+        {
+            result.Message += " Error : serviceObj.UserInput is empty.";
             _logger.LogError(result.Message);
             result.Success = false;
             return result;
