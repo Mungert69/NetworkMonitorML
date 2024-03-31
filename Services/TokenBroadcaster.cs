@@ -16,7 +16,7 @@ public class TokenBroadcaster
     private readonly ILogger _logger;
     public event Func<object, string, Task> LineReceived;
     private CancellationTokenSource _cancellationTokenSource;
-  
+
 
     public TokenBroadcaster(ILLMResponseProcessor responseProcessor, ILogger logger)
     {
@@ -29,73 +29,73 @@ public class TokenBroadcaster
 
     public async Task ReInit(string sessionId)
     {
-           _logger.LogInformation(" Cancel due to ReInit called ");
-                
+        _logger.LogInformation(" Cancel due to ReInit called ");
+
         await _cancellationTokenSource.CancelAsync();
-      
+
     }
-    public async Task BroadcastAsync(ProcessWrapper process, string sessionId, string userInput)
+    public async Task BroadcastAsync(ProcessWrapper process, string sessionId, string userInput, bool isFunctionCallResponse)
     {
         _logger.LogWarning(" Start BroadcastAsyc() ");
-       var lineBuilder = new StringBuilder();
-       var tokenBuilder = new StringBuilder();
-       int emptyLineCount = 0;
-       var cancellationToken = _cancellationTokenSource.Token;
+        var lineBuilder = new StringBuilder();
+        var tokenBuilder = new StringBuilder();
+        int emptyLineCount = 0;
+        var cancellationToken = _cancellationTokenSource.Token;
 
-       while (!cancellationToken.IsCancellationRequested)
-       {
-           byte[] buffer = new byte[1]; // Choose an appropriate buffer size
-                                        // int charRead = await process.StandardOutput.ReadAsync(buffer, 0, buffer.Length);
-           int charRead = await process.StandardOutput.ReadAsync(buffer, 0, buffer.Length);
-           string textChunk = Encoding.UTF8.GetString(buffer, 0, charRead);
-           lineBuilder.Append(textChunk);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            byte[] buffer = new byte[1]; // Choose an appropriate buffer size
+                                         // int charRead = await process.StandardOutput.ReadAsync(buffer, 0, buffer.Length);
+            int charRead = await process.StandardOutput.ReadAsync(buffer, 0, buffer.Length);
+            string textChunk = Encoding.UTF8.GetString(buffer, 0, charRead);
+            lineBuilder.Append(textChunk);
 
-           // Console.WriteLine($"Bytes read: {BitConverter.ToString(buffer, 0, charRead)}");
+            // Console.WriteLine($"Bytes read: {BitConverter.ToString(buffer, 0, charRead)}");
 
-           char currentChar = (char)charRead;
+            char currentChar = (char)charRead;
 
-           //lineBuilder.Append(currentChar);
-           tokenBuilder.Append(textChunk);
-           //Console.WriteLine(lineBuilder.ToString());
-           if (IsTokenComplete(tokenBuilder))
-           {
-               string token = tokenBuilder.ToString();
-               tokenBuilder.Clear();
+            //lineBuilder.Append(currentChar);
+            tokenBuilder.Append(textChunk);
+            //Console.WriteLine(lineBuilder.ToString());
+            if (IsTokenComplete(tokenBuilder))
+            {
+                string token = tokenBuilder.ToString();
+                tokenBuilder.Clear();
 
-               var serviceObj = new LLMServiceObj { SessionId = sessionId, LlmMessage = token };
-               await _responseProcessor.ProcessLLMOutput(serviceObj);
-           }
+                var serviceObj = new LLMServiceObj { SessionId = sessionId, LlmMessage = token };
+                await _responseProcessor.ProcessLLMOutput(serviceObj);
+            }
 
-           if (IsLineComplete(lineBuilder))
-           {
-               string line = lineBuilder.ToString();
-               _logger.LogInformation($"sessionID={sessionId} line is =>{line}<=");
-                await ProcessLine(line,sessionId,userInput);
-               if (line == "\n")
-               {
-                   emptyLineCount++;
-               }
-             
-               if (emptyLineCount == 2 || line == ">\n")
-               {
-                   //state = ResponseState.Completed;
-                   _logger.LogInformation(" Cancel due to output end detected ");
-                   _cancellationTokenSource.Cancel();
-               }
+            if (IsLineComplete(lineBuilder))
+            {
+                string line = lineBuilder.ToString();
+                _logger.LogInformation($"sessionID={sessionId} line is =>{line}<=");
+                await ProcessLine(line, sessionId, userInput, isFunctionCallResponse);
+                if (line == "\n")
+                {
+                    emptyLineCount++;
+                }
 
-
-               lineBuilder.Clear();
-           }
+                if (emptyLineCount == 2 || line == ">\n")
+                {
+                    //state = ResponseState.Completed;
+                    _logger.LogInformation(" Cancel due to output end detected ");
+                    _cancellationTokenSource.Cancel();
+                }
 
 
-           if (charRead == -1)
-           {
-               break;
-           }// End of stream*/
-       }
-       _logger.LogInformation(" --> Finshed LLM Interaction ");
+                lineBuilder.Clear();
+            }
 
-   
+
+            if (charRead == -1)
+            {
+                break;
+            }// End of stream*/
+        }
+        _logger.LogInformation(" --> Finshed LLM Interaction ");
+
+
         //await _currentBroadcastTask;
     }
     private bool IsLineComplete(StringBuilder lineBuilder)
@@ -113,7 +113,7 @@ public class TokenBroadcaster
         return false;
     }
 
-    private async Task ProcessLine(string line, string sessionId, string userInput)
+    private async Task ProcessLine(string line, string sessionId, string userInput, bool isFunctionCallResponse)
     {
         LLMServiceObj responseServiceObj;
         string cleanLine = ParseInput(line);
@@ -130,6 +130,11 @@ public class TokenBroadcaster
         }
 
         responseServiceObj = new LLMServiceObj() { SessionId = sessionId };
+        if (isFunctionCallResponse)
+        {
+            responseServiceObj.LlmMessage = "</functioncall-complete>";
+            await _responseProcessor.ProcessLLMOutput(responseServiceObj);
+        }
         responseServiceObj.LlmMessage = "<end-of-line>";
         await _responseProcessor.ProcessLLMOutput(responseServiceObj);
 
@@ -154,7 +159,7 @@ public class TokenBroadcaster
             newLine = newLine.Substring(0, lastClosingBraceIndex + 1); // Keep the last '}'
         }
         newLine = newLine.Replace("'", "");
-       // _logger.LogInformation($" after -> {newLine} <-");
+        // _logger.LogInformation($" after -> {newLine} <-");
         return newLine;
     }
 

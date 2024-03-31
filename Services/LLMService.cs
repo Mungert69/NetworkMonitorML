@@ -95,7 +95,7 @@ public class LLMService : ILLMService
         }
 
         try { 
-            await _processRunner.SendInputAndGetResponse(serviceObj.SessionId, serviceObj.UserInput);
+            await _processRunner.SendInputAndGetResponse(serviceObj.SessionId, serviceObj.UserInput,  serviceObj.IsFunctionCallResponse);
             result.Message = " Processed UserInput :"+serviceObj.UserInput;
             result.Success = true;
         }

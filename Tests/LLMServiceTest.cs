@@ -98,7 +98,7 @@ public class LLMProcessRunnerTests
         var processRunner = new LLMProcessRunner(_loggerLLMProcessRunnerMock.Object,mockResponseProcessor.Object);
        await processRunner.StartProcess("test","path/to/model",mockProcessWrapper.Object);
         // Act
-        await processRunner.SendInputAndGetResponse(serviceObj.SessionId,serviceObj.UserInput);
+        await processRunner.SendInputAndGetResponse(serviceObj.SessionId,serviceObj.UserInput, serviceObj.IsFunctionCallResponse);
 
          // Assert
     mockProcessWrapper.Verify(p => p.StandardInput.WriteLineAsync("> Add Host 192.168.1.1"), Times.Once);

@@ -14,7 +14,7 @@ namespace NetworkMonitor.ML.Services;
 public interface ILLMProcessRunner
 {
     Task StartProcess(string sessionId, string modelPath, ProcessWrapper? testProcess = null);
-    Task SendInputAndGetResponse(string sessionId, string userInput);
+    Task SendInputAndGetResponse(string sessionId, string userInput, bool isFunctionCallResponse);
     void RemoveProcess(string sessionId);
 }
 public class LLMProcessRunner : ILLMProcessRunner
@@ -34,7 +34,7 @@ public class LLMProcessRunner : ILLMProcessRunner
     public void SetStartInfo(ProcessStartInfo startInfo, string modelPath)
     {
         startInfo.FileName = "/home/mahadeva/code/llama.cpp/build/bin/main";
-        startInfo.Arguments = "-c 6000 -n 6000 -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0.2";
+        startInfo.Arguments = "-c 6000 -n 6000 -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0.3";
         startInfo.UseShellExecute = false;
         startInfo.RedirectStandardInput = true;
         startInfo.RedirectStandardOutput = true;
@@ -105,7 +105,7 @@ public class LLMProcessRunner : ILLMProcessRunner
         }
         _logger.LogInformation($" LLMService Process Started ");
     }
-    public async Task SendInputAndGetResponse(string sessionId, string userInput)
+    public async Task SendInputAndGetResponse(string sessionId, string userInput, bool isFunctionCallResponse)
     {
         _logger.LogInformation($"  LLMService : SendInputAndGetResponse() :");
 
@@ -131,7 +131,7 @@ public class LLMProcessRunner : ILLMProcessRunner
             _logger.LogInformation($" ProcessLLMOutput(user input) -> {userInput}");
        
         
-        await tokenBroadcaster.BroadcastAsync(process, sessionId, userInput);
+        await tokenBroadcaster.BroadcastAsync(process, sessionId, userInput, isFunctionCallResponse);
      
     }
 }
