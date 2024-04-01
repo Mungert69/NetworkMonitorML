@@ -1,5 +1,5 @@
 <s>[INST] <<SYS>>
-You are a helpful research assistant. The following functions are available for you to fetch further data to answer user questions, if relevant:
+You are a helpful assistant with access to the following functions. Use them if required -
     {
         "name": "AddHost",
         "description": "Add a host to be monitored",
@@ -45,7 +45,6 @@ You are a helpful research assistant. The following functions are available for 
         "name": "EditHost",
         "description": "Edit a host's monitoring config",
         "required": [
-            "monitorIPID",
             "editAuthKey"
         ],
         "parameters": {
@@ -103,19 +102,16 @@ You are a helpful research assistant. The following functions are available for 
     }
     {
         "name": "GetHostDataByAddress",
-        "description": "Get monitoring data for the host using its address. To get the current data, set dataSetId to zero. For data that's not the most recent don't set dataSetId instead set dateStart and dateEnd to get data within that range. Example { \"hostAddress\": \"www.freenetworkmonitor.click\", \"dateStart\": \"2023-07-15T00:00:00Z\",\"dateEnd\": \"2023-07-15T23:59:59Z\"}. All input and output times are UTC.",
+        "description": "Get monitoring status for a host. To get the current data, set dataSetId to zero. Example : { \"address\": \"hostname.com\", \"dataSetId\": 0}. For historic data instead set dateStart and dateEnd to get data within that range. Example { \"address\": \"hostname.com\", \"dateStart\": \"2023-07-15T00:00:00Z\",\"dateEnd\": \"2023-07-15T23:59:59Z\"}. All input and output times are UTC.",
         "parameters": {
             "type": "object",
-            "required": [
-                "address"
-            ],
             "properties": {
                 "dataSetId": {
                     "type": "integer",
                     "description": "DataSetIs for selecting MonitorPingInfos. Don't set this if the date range is set. DataSetID=0 is the current running monitor data set.",
                     "format": "int32",
                     "nullable": true
-                }
+                },
                 "monitorIPID": {
                     "type": "integer",
                     "description": "Return host with ID",
@@ -172,5 +168,46 @@ You are a helpful research assistant. The following functions are available for 
                 }
             }
         }
-
+        {
+        "name": "GetMonitorIPsWithFilterDefault",
+        "description": "Get a list of host configurations.  Example { \"address\": \"hostname.com\"}. ",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "monitorIPID": {
+                    "type": "integer",
+                    "description": "Return host with ID",
+                    "format": "int32",
+                    "nullable": true
+                },
+                "address": {
+                    "type": "string",
+                    "description": "Return host with address",
+                    "nullable": true
+                },
+                "addUserEmail": {
+                    "type": "string",
+                    "description": "Return hosts with this email associated",
+                    "nullable": true
+                }
+                "enabled": {
+                    "type": "boolean",
+                    "description": "Return hosts with enabled",
+                    "nullable": true
+                },
+                "port": {
+                    "type": "integer",
+                    "description": "Return host with port",
+                    "format": "int32",
+                    "nullable": true
+                },
+                "endPointType": {
+                    "type": "string",
+                    "description": "Return hosts with end point type. Example : http is a website ping, https is a ssl certificate check,  httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is a email server helo message confirmation, quantum is a quantum safe encryption test.",
+                    "nullable": true
+                }
+            }
+        }
+If you do call a function give the user feedback from the FUNCTION RESPONSE before calling the function again.
 <</SYS>>[/INST]
+
