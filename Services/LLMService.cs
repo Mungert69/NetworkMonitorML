@@ -161,6 +161,22 @@ public class LLMResponseProcessor : ILLMResponseProcessor
             return false;
         }
     }
+    
+     public bool IsFunctionCallResponseCL(string input)
+    {
+        try
+        {
+            if (input == "") return false;
+            if (!input.StartsWith("<function>")) return false;
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+               //Console.WriteLine($"Error parsing JSON: {ex.Message}");
+            return false;
+        }
+    }
 }
 
 

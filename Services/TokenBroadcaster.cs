@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Collections.Generic;
 using Microsoft.Extensions.Logging;
 using NetworkMonitor.Objects.ServiceMessage;
+using NetworkMonitor.Objects;
 
 namespace NetworkMonitor.ML.Services;
 public class TokenBroadcaster
@@ -76,7 +77,7 @@ public class TokenBroadcaster
                     emptyLineCount++;
                 }
 
-                if (emptyLineCount == 2 || line == ">\n")
+                if (emptyLineCount == 1 || line == "\n>")
                 {
                     //state = ResponseState.Completed;
                     _logger.LogInformation(" Cancel due to output end detected ");
@@ -88,10 +89,7 @@ public class TokenBroadcaster
             }
 
 
-            if (charRead == -1)
-            {
-                break;
-            }// End of stream*/
+           
         }
         _logger.LogInformation(" --> Finshed LLM Interaction ");
 
@@ -116,7 +114,8 @@ public class TokenBroadcaster
     private async Task ProcessLine(string line, string sessionId, string userInput, bool isFunctionCallResponse)
     {
         LLMServiceObj responseServiceObj;
-        string cleanLine = ParseInput(line);
+        string cleanLine = ParseInputNF(line);
+        //string cleanLine = line;
         if (_responseProcessor.IsFunctionCallResponse(cleanLine))
         {
             _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
@@ -126,6 +125,7 @@ public class TokenBroadcaster
             responseServiceObj.LlmMessage = "";
             responseServiceObj.IsFunctionCall = true;
             responseServiceObj.JsonFunction = cleanLine;
+            //responseServiceObj.JsonFunction = CallFuncJson(cleanLine);
             await _responseProcessor.ProcessFunctionCall(responseServiceObj);
         }
 
@@ -139,7 +139,21 @@ public class TokenBroadcaster
         await _responseProcessor.ProcessLLMOutput(responseServiceObj);
 
     }
-    private string ParseInput(string input)
+    public string CallFuncJson(string input) {
+        string callFuncJson = "";
+        string funcName = "addHost";
+        int startIndex = input.IndexOf('{');
+        int lastClosingBraceIndex = input.LastIndexOf('}');
+        string json = "";
+         if (startIndex != -1)
+        {
+            json = input.Substring(startIndex,lastClosingBraceIndex + 1);
+        }
+        callFuncJson="{ \"name\" : \"" + funcName + "\" \"arguments\" : \"" + json + "\"}";  
+        return callFuncJson;
+
+    }
+    private string ParseInputNF(string input)
     {
         //_logger.LogInformation($" before -> {input} <-");
         if (input.Contains("FUNCTION RESPONSE")) return input;

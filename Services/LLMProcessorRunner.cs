@@ -34,7 +34,7 @@ public class LLMProcessRunner : ILLMProcessRunner
     public void SetStartInfo(ProcessStartInfo startInfo, string modelPath)
     {
         startInfo.FileName = "/home/mahadeva/code/llama.cpp/build/bin/main";
-        startInfo.Arguments = "-c 6000 -n 6000 -m /home/mahadeva/code/models/natural-functions.Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0.1";
+        startInfo.Arguments = "-c 6000 -n 6000 -m /home/mahadeva/code/models/dolphin-2.6-mistral-7b-dpo-laser-function-calling-Q4_K_M.gguf  --prompt-cache /home/mahadeva/context.gguf --prompt-cache-ro  -f /home/mahadeva/initialPrompt.txt -ins --keep -1 --temp 0.3";
         startInfo.UseShellExecute = false;
         startInfo.RedirectStandardInput = true;
         startInfo.RedirectStandardOutput = true;
