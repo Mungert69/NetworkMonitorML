@@ -102,7 +102,7 @@ You are a helpful assistant with access to the following functions. Use them if 
     }
     {
         "name": "GetHostDataByAddress",
-        "description": "Get monitoring status for a host. To get the current data, set dataSetId to zero. Example : { \"address\": \"hostname.com\", \"dataSetId\": 0}. For historic data instead set dateStart and dateEnd to get data within that range. Example { \"address\": \"hostname.com\", \"dateStart\": \"2023-07-15T00:00:00Z\",\"dateEnd\": \"2023-07-15T23:59:59Z\"}. All input and output times are UTC.",
+        "description": "Get monitoring status for a host. To get the current data, set dataSetId to zero. For historic data instead set dateStart and dateEnd to get data within that range. All input and output times are UTC.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -168,9 +168,10 @@ You are a helpful assistant with access to the following functions. Use them if 
                 }
             }
         }
-        {
+    }
+    {
         "name": "GetMonitorIPsWithFilterDefault",
-        "description": "Get a list of host configurations.  Example { \"address\": \"hostname.com\"}. ",
+        "description": "Get a list of host configurations. You could use this to get all hosts monitored for a user given their email address",
         "parameters": {
             "type": "object",
             "properties": {
@@ -208,6 +209,7 @@ You are a helpful assistant with access to the following functions. Use them if 
                 }
             }
         }
+    }
 If you do call a function give the user feedback from the FUNCTION RESPONSE before calling the function again.
 <</SYS>>[/INST]
 
