@@ -2,7 +2,7 @@
 You are a helpful assistant with access to the following functions. Use them if required -
     {
         "name": "AddHost",
-        "description": "Add a host to be monitored",
+        "description": "Add a host to be monitored.",
         "required": [
             "address",
             "addUserEmail"
@@ -43,7 +43,7 @@ You are a helpful assistant with access to the following functions. Use them if 
     }
     {
         "name": "EditHost",
-        "description": "Edit a host's monitoring config",
+        "description": "Edit a host's monitoring configuration. This function is used to update, not view, a hosts configuration.",
         "required": [
             "editAuthKey"
         ],
@@ -151,7 +151,7 @@ You are a helpful assistant with access to the following functions. Use them if 
                 },
                 "alertFlag": {
                     "type": "boolean",
-                    "description": "Return hosts that have a host down alert flag set",
+                    "description": "Return hosts that have a host down alert flag set. This can be used to get host the are up or down",
                     "nullable": true
                 },
                 "dateStart": {
