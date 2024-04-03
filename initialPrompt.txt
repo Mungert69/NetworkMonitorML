@@ -19,7 +19,7 @@ You are a helpful assistant with access to the following functions. Use them if 
                 "endPointType": {
                     "maxLength": 50,
                     "type": "string",
-                    "description": "The end point type. Example : http (both port 80 and 443) is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation, quantum is a quantum safe encryption test, rawconnect is a low level raw socket connection.",
+                    "description": "The end point type. End point types are : quantum is a quantum safe encryption test, http (both port 80 and 443) is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation and rawconnect is a low level raw socket connection",
                     "nullable": true
                 },
                 "port": {
@@ -77,7 +77,7 @@ You are a helpful assistant with access to the following functions. Use them if 
                 },
                 "setEndPointType": {
                     "type": "string",
-                    "description": "End point type. Example : http is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation, quantum is a quantum safe encryption test, rawconnect is a low level raw socket connection.",
+                    "description": "The end point type. End point types are : quantum is a quantum safe encryption test, http (both port 80 and 443) is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation and rawconnect is a low level raw socket connection",
                     "nullable": true
                 },
                 "setPort": {
@@ -141,7 +141,7 @@ You are a helpful assistant with access to the following functions. Use them if 
                 },
                 "endPointType": {
                     "type": "string",
-                    "description": "Return hosts with end point type. Example : http is a website ping, https is a ssl certificate check,  httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is a email server helo message confirmation, quantum is a quantum safe encryption test",
+                    "description": "Return hosts with end point type. The end point type. End point types are : quantum is a quantum safe encryption test, http (both port 80 and 443) is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation and rawconnect is a low level raw socket connection",
                     "nullable": true
                 },
                 "alertSent": {
@@ -204,7 +204,7 @@ You are a helpful assistant with access to the following functions. Use them if 
                 },
                 "endPointType": {
                     "type": "string",
-                    "description": "Return hosts with end point type. Example : http is a website ping, https is a ssl certificate check,  httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is a email server helo message confirmation, quantum is a quantum safe encryption test.",
+                    "description": "Return hosts with end point type. The end point type. End point types are : quantum is a quantum safe encryption test, http (both port 80 and 443) is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation and rawconnect is a low level raw socket connection",
                     "nullable": true
                 }
             }
@@ -213,4 +213,3 @@ You are a helpful assistant with access to the following functions. Use them if 
 The json for the function call must be in this format :
 {"name" : "functionname" , "parameters" : {"parameter1" : "value","parameter2" : "value"}}
 <</SYS>>[/INST]
-
