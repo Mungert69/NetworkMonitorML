@@ -19,12 +19,12 @@ You are a helpful assistant with access to the following functions. Use them if 
                 "endPointType": {
                     "maxLength": 50,
                     "type": "string",
-                    "description": "The end point type. Example : http is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation, quantum is a quantum safe encryption test, rawconnect is a low level raw socket connection.",
+                    "description": "The end point type. Example : http (both port 80 and 443) is a website ping, https is a ssl certificate check, httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is an email server helo message confirmation, quantum is a quantum safe encryption test, rawconnect is a low level raw socket connection.",
                     "nullable": true
                 },
                 "port": {
                     "type": "integer",
-                    "description": "The port of the service being monitored. It will be zero if it is the standard port for the host end point type",
+                    "description": "The port of the service being monitored. It will be zero if it is the standard port for the host end point type. Note the standard port for end point type http is 80 or 443 depending on the url of the host",
                     "format": "int32"
                 },
                 "timeout": {
@@ -82,7 +82,7 @@ You are a helpful assistant with access to the following functions. Use them if 
                 },
                 "setPort": {
                     "type": "integer",
-                    "description": "Port of the service being monitored. It should be zero if it is the standard port for the host end point type",
+                    "description": "Port of the service being monitored. It should be zero if it is the standard port for the host end point type.  Note the standard port for end point type http is 80 or 443 depending on the url of the host",
                     "format": "int32",
                     "nullable": true
                 },
@@ -135,13 +135,13 @@ You are a helpful assistant with access to the following functions. Use them if 
                 },
                 "port": {
                     "type": "integer",
-                    "description": "Return host with port",
+                    "description": "Return host with port. It will be zero if it is the standard port for the host end point type. Note the standard port for end point type http is 80 or 443 depending on the url of the host",
                     "format": "int32",
                     "nullable": true
                 },
                 "endPointType": {
                     "type": "string",
-                    "description": "Return hosts with end point type. Example : http is a website ping, https is a ssl certificate check,  httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is a email server helo message confirmation, quantum is a quantum safe encryption test.",
+                    "description": "Return hosts with end point type. Example : http is a website ping, https is a ssl certificate check,  httphtml is a website html load, icmp is a host ping, dns is a dns lookup, smtp is a email server helo message confirmation, quantum is a quantum safe encryption test",
                     "nullable": true
                 },
                 "alertSent": {
@@ -198,7 +198,7 @@ You are a helpful assistant with access to the following functions. Use them if 
                 },
                 "port": {
                     "type": "integer",
-                    "description": "Return host with port",
+                    "description": "Return hosts with port. It will be zero if it is the standard port for the host end point type.  Note the standard port for end point type http is 80 or 443 depending on the url of the host",
                     "format": "int32",
                     "nullable": true
                 },

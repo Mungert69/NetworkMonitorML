@@ -89,7 +89,7 @@ public class TokenBroadcaster
             }
 
 
-           
+
         }
         _logger.LogInformation(" --> Finshed LLM Interaction ");
 
@@ -113,68 +113,80 @@ public class TokenBroadcaster
 
     private async Task ProcessLine(string line, string sessionId, string userInput, bool isFunctionCallResponse)
     {
-        LLMServiceObj responseServiceObj;
-        string cleanLine = ParseInputNF(line);
-        //string cleanLine = line;
-        if (_responseProcessor.IsFunctionCallResponse(cleanLine))
-        {
-            _logger.LogInformation($" ProcessLLMOutput(call_func) -> {cleanLine}");
-            responseServiceObj = new LLMServiceObj() { SessionId = sessionId, UserInput = userInput };
-            responseServiceObj.LlmMessage = "</functioncall>";
-            await _responseProcessor.ProcessLLMOutput(responseServiceObj);
-            responseServiceObj.LlmMessage = "";
-            responseServiceObj.IsFunctionCall = true;
-            responseServiceObj.JsonFunction = cleanLine;
-            //responseServiceObj.JsonFunction = CallFuncJson(cleanLine);
-            await _responseProcessor.ProcessFunctionCall(responseServiceObj);
-        }
+        LLMServiceObj responseServiceObj = new LLMServiceObj() { SessionId = sessionId };
 
-        responseServiceObj = new LLMServiceObj() { SessionId = sessionId };
+
+
         if (isFunctionCallResponse)
         {
             responseServiceObj.LlmMessage = "</functioncall-complete>";
             await _responseProcessor.ProcessLLMOutput(responseServiceObj);
         }
+        else
+        {
+            string jsonLine = ParseInputForJson(line);
+            //string cleanLine = line;
+            if (line != jsonLine )
+            {
+                _logger.LogInformation($" ProcessLLMOutput(call_func) -> {jsonLine}");
+                responseServiceObj = new LLMServiceObj() { SessionId = sessionId, UserInput = userInput };
+                responseServiceObj.LlmMessage = "</functioncall>";
+                await _responseProcessor.ProcessLLMOutput(responseServiceObj);
+                responseServiceObj.LlmMessage = "";
+                responseServiceObj.IsFunctionCall = true;
+                responseServiceObj.JsonFunction = jsonLine;
+                //responseServiceObj.JsonFunction = CallFuncJson(cleanLine);
+                await _responseProcessor.ProcessFunctionCall(responseServiceObj);
+            }
+
+
+        }
+
+
+
         responseServiceObj.LlmMessage = "<end-of-line>";
         await _responseProcessor.ProcessLLMOutput(responseServiceObj);
 
     }
-    public string CallFuncJson(string input) {
+    public string CallFuncJson(string input)
+    {
         string callFuncJson = "";
         string funcName = "addHost";
         int startIndex = input.IndexOf('{');
         int lastClosingBraceIndex = input.LastIndexOf('}');
         string json = "";
-         if (startIndex != -1)
+        if (startIndex != -1)
         {
-            json = input.Substring(startIndex,lastClosingBraceIndex + 1);
+            json = input.Substring(startIndex, lastClosingBraceIndex + 1);
         }
-        callFuncJson="{ \"name\" : \"" + funcName + "\" \"arguments\" : \"" + json + "\"}";  
+        callFuncJson = "{ \"name\" : \"" + funcName + "\" \"arguments\" : \"" + json + "\"}";
         return callFuncJson;
 
     }
-    private string ParseInputNF(string input)
+    private string ParseInputForJson(string input)
     {
-        //_logger.LogInformation($" before -> {input} <-");
-        if (input.Contains("FUNCTION RESPONSE")) return input;
+        if (input.Contains("FUNCTION RESPONSE:")) return input;
         string newLine = string.Empty;
+        // bool foundStart = false;
+        bool foundEnd = false;
         int startIndex = input.IndexOf('{');
-        if (startIndex != -1)
+
+        // If '{' is not found or is too far into the input, return the original input
+        if (startIndex == -1 || startIndex > 20)
         {
-            newLine = input.Substring(startIndex);
+            return input;
         }
-        else
-        {
-            return newLine;
-        }
+
+        newLine = input.Substring(startIndex);
+
         int lastClosingBraceIndex = newLine.LastIndexOf('}');
         if (lastClosingBraceIndex != -1)
         {
-            newLine = newLine.Substring(0, lastClosingBraceIndex + 1); // Keep the last '}'
+            newLine = newLine.Substring(0, lastClosingBraceIndex + 1);
+            foundEnd = true;
         }
-        newLine = newLine.Replace("'", "");
-        // _logger.LogInformation($" after -> {newLine} <-");
-        return newLine;
+        if (foundEnd) return JsonSanitizer.SanitizeJson(newLine);
+        else return input;
     }
 
 

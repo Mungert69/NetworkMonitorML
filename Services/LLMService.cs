@@ -26,7 +26,7 @@ public class LLMService : ILLMService
 {
     private ILogger _logger;
     private readonly ILLMProcessRunner _processRunner;
-        private IRabbitRepo _rabbitRepo;
+    private IRabbitRepo _rabbitRepo;
 
     private readonly ConcurrentDictionary<string, Session> _sessions = new ConcurrentDictionary<string, Session>();
     // private readonly ILLMResponseProcessor _responseProcessor;
@@ -37,7 +37,7 @@ public class LLMService : ILLMService
         _rabbitRepo = rabbitRepo;
         _logger = logger;
     }
-    
+
     public async Task<LLMServiceObj> StartProcess(LLMServiceObj llmServiceObj)
     {
         string modelPath = "notset";
@@ -54,13 +54,17 @@ public class LLMService : ILLMService
         {
             llmServiceObj.ResultMessage = e.Message;
             llmServiceObj.ResultSuccess = false;
-         }
+        }
 
-
+        if (!llmServiceObj.ResultSuccess)
+        {
+            llmServiceObj.LlmMessage = llmServiceObj.ResultMessage;
+            await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceMessage", llmServiceObj);
+        }
         return llmServiceObj;
     }
 
-     public  LLMServiceObj RemoveProcess(LLMServiceObj llmServiceObj)
+    public LLMServiceObj RemoveProcess(LLMServiceObj llmServiceObj)
     {
         try
         {
@@ -68,47 +72,55 @@ public class LLMService : ILLMService
             _sessions[llmServiceObj.SessionId] = new Session();
             llmServiceObj.ResultMessage = " Success : LLMService Removed Session .";
             llmServiceObj.ResultSuccess = true;
-             }
+        }
         catch (Exception e)
         {
             llmServiceObj.ResultMessage = e.Message;
             llmServiceObj.ResultSuccess = false;
-         }
+        }
 
 
         return llmServiceObj;
     }
 
 
-    public async Task<ResultObj> SendInputAndGetResponse(LLMServiceObj serviceObj)
+    public async Task<ResultObj> SendInputAndGetResponse(LLMServiceObj llmServiceObj)
     {
         var result = new ResultObj();
-         if (serviceObj.SessionId==null) { 
-            result.Message="SessionId is null";
+
+        if (llmServiceObj.SessionId == null && !_sessions.TryGetValue(llmServiceObj.SessionId, out var session))
+        {
+            result.Message = "Invalid session ID";
             result.Success = false;
-            return result;
+
         }
-        if (!_sessions.TryGetValue(serviceObj.SessionId, out var session)) { 
-            result.Message="Invalid session ID";
-            result.Success = false;
-            return result;
+        else
+        {
+            try
+            {
+                await _processRunner.SendInputAndGetResponse(llmServiceObj.SessionId, llmServiceObj.UserInput, llmServiceObj.IsFunctionCallResponse);
+                result.Message = " Processed UserInput :" + llmServiceObj.UserInput;
+                result.Success = true;
+            }
+            catch (Exception e)
+            {
+                result.Message += $" Error : failed to send and process user input {e.Message}";
+                result.Success = false;
+            }
         }
 
-        try { 
-            await _processRunner.SendInputAndGetResponse(serviceObj.SessionId, serviceObj.UserInput,  serviceObj.IsFunctionCallResponse);
-            result.Message = " Processed UserInput :"+serviceObj.UserInput;
-            result.Success = true;
+        if (!result.Success)
+        {
+            llmServiceObj.LlmMessage = result.Message;
+            await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceMessage", llmServiceObj);
         }
-        catch (Exception e) {
-            result.Message += $" Error : failed to send and process user input {e.Message}";
-            result.Success = false;
-        }
+
         return result;
     }
 
-     public void EndSession(string sessionId)
+    public void EndSession(string sessionId)
     {
-          _sessions.TryRemove(sessionId, out _);
+        _sessions.TryRemove(sessionId, out _);
     }
 }
 
@@ -144,7 +156,7 @@ public class LLMResponseProcessor : ILLMResponseProcessor
     public async Task ProcessFunctionCall(LLMServiceObj serviceObj)
     {
         await _rabbitRepo.PublishAsync<LLMServiceObj>("llmServiceFunction", serviceObj);
-        
+
     }
 
     public bool IsFunctionCallResponse(string input)
@@ -157,12 +169,12 @@ public class LLMResponseProcessor : ILLMResponseProcessor
         }
         catch (Exception ex)
         {
-               //Console.WriteLine($"Error parsing JSON: {ex.Message}");
+            //Console.WriteLine($"Error parsing JSON: {ex.Message}");
             return false;
         }
     }
-    
-     public bool IsFunctionCallResponseCL(string input)
+
+    public bool IsFunctionCallResponseCL(string input)
     {
         try
         {
@@ -173,7 +185,7 @@ public class LLMResponseProcessor : ILLMResponseProcessor
         }
         catch (Exception ex)
         {
-               //Console.WriteLine($"Error parsing JSON: {ex.Message}");
+            //Console.WriteLine($"Error parsing JSON: {ex.Message}");
             return false;
         }
     }
