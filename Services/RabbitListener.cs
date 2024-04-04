@@ -23,8 +23,7 @@ public interface IRabbitListener
 {
 
     Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj);
-    Task<ResultObj> StartSession(LLMServiceObj? llmServiceObj);
-    Task<ResultObj> UserInput(LLMServiceObj? llmServiceObj);
+
 
 
 }
@@ -32,13 +31,11 @@ public interface IRabbitListener
 public class RabbitListener : RabbitListenerBase, IRabbitListener
 {
     protected IMonitorMLService _mlService;
-    protected ILLMService _llmService;
 
-    public RabbitListener(IMonitorMLService mlService, ILLMService llmService, ILogger<RabbitListenerBase> logger, ISystemParamsHelper systemParamsHelper) : base(logger, DeriveSystemUrl(systemParamsHelper))
+    public RabbitListener(IMonitorMLService mlService, ILogger<RabbitListenerBase> logger, ISystemParamsHelper systemParamsHelper) : base(logger, DeriveSystemUrl(systemParamsHelper))
     {
 
         _mlService = mlService;
-        _llmService = llmService;
         Setup();
     }
 
@@ -74,25 +71,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             FuncName = "predictPingInfos",
             MessageTimeout = 60000
         });
-        _rabbitMQObjs.Add(new RabbitMQObj()
-        {
-            ExchangeName = "llmStartSession",
-            FuncName = "llmStartSession",
-            MessageTimeout = 60000
-        });
-        _rabbitMQObjs.Add(new RabbitMQObj()
-        {
-            ExchangeName = "llmUserInput",
-            FuncName = "llmUserInput",
-            MessageTimeout = 60000
-        });
-        _rabbitMQObjs.Add(new RabbitMQObj()
-        {
-            ExchangeName = "llmRemoveSession",
-            FuncName = "llmRemoveSession",
-            MessageTimeout = 60000
-        });
-
+      
 
 
     }
@@ -182,52 +161,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     }
                 };
                     break;
-                case "llmStartSession":
-                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.Received += async (model, ea) =>
-                {
-                    try
-                    {
-                        result = await StartSession(ConvertToObject<LLMServiceObj>(model, ea));
-                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.llmStartSession " + ex.Message);
-                    }
-                };
-                    break;
-                case "llmRemoveSession":
-                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.Received += (model, ea) =>
-                {
-                    try
-                    {
-                        result = RemoveSession(ConvertToObject<LLMServiceObj>(model, ea));
-                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.llmRemoveSession " + ex.Message);
-                    }
-                };
-                    break;
-                case "llmUserInput":
-                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.Received += async (model, ea) =>
-                {
-                    try
-                    {
-                        result = await UserInput(ConvertToObject<LLMServiceObj>(model, ea));
-                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.llmUserInput " + ex.Message);
-                    }
-                };
-                    break;
-
+              
             }
         });
             if (result.Success) result.Message += " Success : Declared all consumers ";
@@ -342,108 +276,5 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         else _logger.LogError(result.Message);
         return result;
     }
-    public async Task<ResultObj> StartSession(LLMServiceObj? llmServiceObj)
-    {
-        var result = new ResultObj();
-        result.Success = false;
-        result.Message = "MessageAPI : StartSession : ";
-        if (llmServiceObj == null)
-        {
-            result.Message += " Error : llmServiceObj is null.";
-            _logger.LogError(result.Message);
-            result.Success = false;
-            return result;
-        }
-
-        try
-        {
-            llmServiceObj = await _llmService.StartProcess(llmServiceObj);
-            result.Message = llmServiceObj.ResultMessage;
-            result.Success = llmServiceObj.ResultSuccess;
-
-
-        }
-        catch (Exception e)
-        {
-            result.Message = e.Message;
-            result.Success = false;
-        }
-
-        if (result.Success) _logger.LogInformation(result.Message);
-        else _logger.LogError(result.Message);
-        return result;
-    }
-
-    public ResultObj RemoveSession(LLMServiceObj? llmServiceObj)
-    {
-        var result = new ResultObj();
-        result.Success = false;
-        result.Message = "MessageAPI : RemoveSession : ";
-        if (llmServiceObj == null)
-        {
-            return new ResultObj() { Message = " Error : llmServiceObj is null." };
-        }
-
-        try
-        {
-            llmServiceObj = _llmService.RemoveProcess(llmServiceObj);
-            result.Message = llmServiceObj.ResultMessage;
-            result.Success = llmServiceObj.ResultSuccess;
-
-
-        }
-        catch (Exception e)
-        {
-            result.Message = e.Message;
-            result.Success = false;
-        }
-
-        if (result.Success) _logger.LogInformation(result.Message);
-        else _logger.LogError(result.Message);
-        return result;
-    }
-
-
-    public async Task<ResultObj> UserInput(LLMServiceObj? serviceObj)
-    {
-        var result = new ResultObj();
-        result.Success = false;
-        result.Message = "MessageAPI : UserInput : ";
-        _logger.LogInformation($" Start User Input {serviceObj!.UserInput}");
-        if (serviceObj == null )
-        {
-            result.Message += " Error : serviceObj is null.";
-            _logger.LogError(result.Message);
-            result.Success = false;
-            return result;
-        }
-          if (serviceObj.UserInput == "" )
-        {
-            result.Message += " Error : serviceObj.UserInput is empty.";
-            _logger.LogError(result.Message);
-            result.Success = false;
-            return result;
-        }
-
-        try
-        {
-            if (serviceObj.IsFunctionCallResponse)
-            {
-                serviceObj.UserInput = "FUNCTION RESPONSE: " + serviceObj.UserInput;
-            }
-            var resultService = await _llmService.SendInputAndGetResponse(serviceObj);
-            result.Message += resultService.Message;
-            result.Success = resultService.Success;
-        }
-        catch (Exception e)
-        {
-            result.Message = e.Message;
-            result.Success = false;
-
-        }
-        if (result.Success) _logger.LogInformation(result.Message);
-        else _logger.LogError(result.Message);
-        return result;
-    }
-
+    
 }

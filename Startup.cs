@@ -71,9 +71,7 @@ namespace NetworkMonitor.ML
             services.AddSingleton<IRabbitRepo, RabbitRepo>();
             services.AddSingleton<IFileRepo, FileRepo>();
             services.AddSingleton<ISystemParamsHelper, SystemParamsHelper>();
-             services.AddSingleton<ILLMResponseProcessor, LLMResponseProcessor>();
-             services.AddSingleton<ILLMService, LLMService>();
-             services.AddSingleton<ILLMProcessRunner, LLMProcessRunner>();
+           
 
             services.AddSingleton(_cancellationTokenSource);
             services.Configure<HostOptions>(s => s.ShutdownTimeout = TimeSpan.FromMinutes(5));
