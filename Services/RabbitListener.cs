@@ -71,7 +71,22 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             FuncName = "predictPingInfos",
             MessageTimeout = 60000
         });
-      
+        _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "predictAlertFlag",
+            FuncName = "predictAlertFlag"
+        });
+        _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "predictAlertSent",
+            FuncName = "predictAlertSent"
+        });
+
+        _rabbitMQObjs.Add(new RabbitMQObj()
+        {
+            ExchangeName = "predictResetAlerts",
+            FuncName = "predictResetAlerts"
+        });
 
 
     }
@@ -161,7 +176,53 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                     }
                 };
                     break;
-              
+                     case "predictAlertFlag":
+                            rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                            rabbitMQObj.Consumer.Received += async (model, ea) =>
+                        {
+                            try
+                            {
+                                result = await AlertFlag(ConvertToList<List<int>>(model, ea));
+                                rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictAlertFlag " + ex.Message);
+                            }
+                        };
+                            break;
+                        case "predictAlertSent":
+                            rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                            rabbitMQObj.Consumer.Received += async (model, ea) =>
+                        {
+                            try
+                            {
+                                result = await AlertSent(ConvertToList<List<int>>(model, ea));
+                                rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictAlertSent " + ex.Message);
+                            }
+                        };
+                            break;
+                        case "predictResetAlerts":
+                            rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
+                            rabbitMQObj.Consumer.Received += async (model, ea) =>
+                        {
+                            try
+                            {
+                                result = await ResetAlerts(ConvertToList<List<int>>(model, ea));
+                                rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictResetAlerts " + ex.Message);
+                            }
+                        };
+                            break;
+                       
+
             }
         });
             if (result.Success) result.Message += " Success : Declared all consumers ";
@@ -276,5 +337,109 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         else _logger.LogError(result.Message);
         return result;
     }
-    
+
+     public async Task<ResultObj> AlertFlag(List<int>? monitorIPIDs)
+        {
+            ResultObj result = new ResultObj();
+            result.Success = false;
+            result.Message = "MessageAPI : AlertFlag : ";
+            if (monitorIPIDs == null)
+            {
+                result.Success = false;
+                result.Message += "Error : monitorIPIDs was null .";
+                _logger.LogError(result.Message);
+                return result;
+
+            }
+            try
+            {
+                monitorIPIDs.ForEach(f => _logger.LogDebug("AlertFlag Found monitorIPID=" + f));
+                List<ResultObj> results = await _mlService.UpdateAlertFlag(monitorIPIDs, true);
+                result.Success = results.Where(w => w.Success == false).ToList().Count() == 0;
+                if (result.Success) result.Message += "Success ran ok ";
+                else
+                {
+                    results.Select(s => s.Message).ToList().ForEach(f => result.Message += f);
+                    result.Data = results;
+                }
+                _logger.LogInformation(result.Message);
+            }
+            catch (Exception e)
+            {
+                result.Data = null;
+                result.Success = false;
+                result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+                _logger.LogError(result.Message);
+            }
+            return result;
+        }
+        public async Task<ResultObj> AlertSent(List<int>? monitorIPIDs)
+        {
+            ResultObj result = new ResultObj();
+            result.Success = false;
+            result.Message = "MessageAPI : AlertSent : ";
+            if (monitorIPIDs == null)
+            {
+                result.Success = false;
+                result.Message += "Error : monitorIPIDs was null .";
+                _logger.LogError(result.Message);
+                return result;
+
+            }
+            try
+            {
+                monitorIPIDs.ForEach(f => _logger.LogDebug("SentFlag Found monitorIPID =" + f));
+                List<ResultObj> results = await _mlService.UpdateAlertSent(monitorIPIDs, true);
+                result.Success = results.Where(w => w.Success == false).ToList().Count() == 0;
+                if (result.Success) result.Message += "Success ran ok ";
+                else
+                {
+                    results.Select(s => s.Message).ToList().ForEach(f => result.Message += f);
+                    result.Data = results;
+                }
+                _logger.LogInformation(result.Message);
+            }
+            catch (Exception e)
+            {
+                result.Data = null;
+                result.Success = false;
+                result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+                _logger.LogError(result.Message);
+            }
+            return result;
+        }
+        public async Task<ResultObj> ResetAlerts(List<int>? monitorIPIDs)
+        {
+            ResultObj result = new ResultObj();
+            result.Success = false;
+            result.Message = "MessageAPI : ResetAlerts : ";
+            if (monitorIPIDs == null)
+            {
+                result.Success = false;
+                result.Message += "Error : monitorIPIDs was null .";
+                _logger.LogError(result.Message);
+                return result;
+
+            }
+            try
+            {
+                var results = await  _mlService.ResetAlerts(monitorIPIDs);
+                results.ForEach(f => result.Message += f.Message);
+                result.Success = results.All(a => a.Success == true) && results.Count() != 0;
+                result.Data = results;
+                if (result.Success == true)
+                    _logger.LogInformation(result.Message);
+                else _logger.LogError(result.Message);
+            }
+            catch (Exception e)
+            {
+                result.Data = null;
+                result.Success = false;
+                result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+                _logger.LogError(result.Message);
+            }
+            return result;
+        }
+       
+
 }

@@ -14,7 +14,7 @@ namespace NetworkMonitor.ML.Repository
     public class PublishRepo
     {
 
-        public static async Task<ResultObj> AlertMessgeResetAlerts(IRabbitRepo rabbitRepo, List<AlertFlagObj> alertFlagObjs, string appID, string authKey)
+        public static async Task<ResultObj> AlertMessgeResetPredictAlerts(IRabbitRepo rabbitRepo, List<AlertFlagObj> alertFlagObjs, string appID, string authKey)
         {
             var result = new ResultObj();
             try
@@ -26,15 +26,15 @@ namespace NetworkMonitor.ML.Repository
                     AlertFlagObjs = alertFlagObjs
                 };
 
-                await rabbitRepo.PublishAsync<AlertServiceAlertObj>("alertMessageResetAlerts", alertServiceAlertObj);
+                await rabbitRepo.PublishAsync<AlertServiceAlertObj>("alertMessageResetPredictAlerts", alertServiceAlertObj);
                 //DaprRepo.PublishEvent<List<AlertFlagObj>>(_daprClient, "alertMessageResetAlerts", alertFlagObjs);
                 result.Success = true;
-                result.Message = " Success : sent alertMessageResetAlert message . ";
+                result.Message = " Success : sent alertMessageResetPredictAlert message . ";
             }
             catch (Exception e)
             {
                 result.Success = false;
-                result.Message += " Error : failed to set alertMessageResetAlert. Error was :" + e.Message.ToString();
+                result.Message += " Error : failed to set alertMessageResetPredictAlert. Error was :" + e.Message.ToString();
             }
             return result;
         }

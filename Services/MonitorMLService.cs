@@ -34,6 +34,9 @@ public interface IMonitorMLService
     Task<TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>> CheckLatestHostsTest();
     Task<ResultObj> CheckLatestHosts();
     ResultObj UpdatePingInfos(ProcessorDataObj processorDataObj);
+    Task<List<ResultObj>> UpdateAlertSent(List<int> monitorIPIDs, bool alertSent);
+    Task<List<ResultObj>> UpdateAlertFlag(List<int> monitorIPIDs, bool alertSent);
+    Task<List<ResultObj>> ResetAlerts(List<int> monitorIPIDs);
 
     int PredictWindow { get; set; }
     int MartingaleDetectionThreshold { get; set; }
@@ -91,7 +94,8 @@ public class MonitorMLService : IMonitorMLService
         {
             await _monitorMLDataRepo.GetLatestMonitorPingInfos(_mlParams.PredictWindow);
         }
-        catch (Exception e) {
+        catch (Exception e)
+        {
             _logger.LogCritical($" Error : unable to init Service . Error was : {e.Message}");
         }
     }
@@ -227,13 +231,16 @@ public class MonitorMLService : IMonitorMLService
             result.Message = combinedAnalysis;
             result.Data = (changeDetectionResult, spikeDetectionResult);
             _logger.LogDebug($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
-            var predictStatus = new PredictStatus();
+            var predictStatus = monitorPingInfo.PredictStatus;
+            if (predictStatus == null) {
+                _logger.LogWarning(" Warning : Creating new PredictStatus ??");
+                predictStatus = new PredictStatus(); }
             predictStatus.ChangeDetectionResult = changeDetectionResult;
             predictStatus.SpikeDetectionResult = spikeDetectionResult;
             predictStatus.EventTime = monitorPingInfo.DateEnded;
             if (changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected)
             {
-                predictStatus.AlertFlag = true;
+                //predictStatus.AlertFlag = true;
                 _logger.LogInformation($"MonitorPingInfo: {monitorPingInfo.ID} - {combinedAnalysis}");
             }
             predictStatus.Message = combinedAnalysis;
@@ -620,8 +627,9 @@ public class MonitorMLService : IMonitorMLService
     {
         ResultObj result = new ResultObj();
         result.Success = false;
-        result.Message = "Service : UpdatePingInfos : For Processor AuthID "+processorDataObj.AppID;
-        if (_isRunning) {
+        result.Message = "Service : UpdatePingInfos : For Processor AuthID " + processorDataObj.AppID;
+        if (_isRunning)
+        {
             //TODO queue the Update until _isRunning=false
         }
         try
@@ -634,14 +642,16 @@ public class MonitorMLService : IMonitorMLService
                     monitorPingInfo.DataSetID = 0;
                     var updateResult = _monitorMLDataRepo.UpdateMonitorPingInfo(monitorPingInfo);
 
-                    if (!updateResult.Success) {
+                    if (!updateResult.Success)
+                    {
                         result.Message += updateResult.Message;
-                        return result; }
+                        return result;
+                    }
                 }
-                 result.Message += $" Success : updated {processorDataObj.MonitorPingInfos.Count} MonitorPingInfos , {processorDataObj.PingInfos.Count} PingInfos.";
-           
+                result.Message += $" Success : updated {processorDataObj.MonitorPingInfos.Count} MonitorPingInfos , {processorDataObj.PingInfos.Count} PingInfos.";
+
             }
-                
+
 
             if (processorDataObj.RemoveMonitorPingInfoIDs != null && processorDataObj.RemoveMonitorPingInfoIDs.Count != 0)
             {
@@ -658,7 +668,7 @@ public class MonitorMLService : IMonitorMLService
             result.Success = true;
 
 
-           // _logger.LogInformation(result.Message);
+            // _logger.LogInformation(result.Message);
         }
         catch (Exception e)
         {
@@ -669,6 +679,47 @@ public class MonitorMLService : IMonitorMLService
         }
         return result;
     }
+
+    public async Task<List<ResultObj>> UpdateAlertSent(List<int> monitorIPIDs, bool alertSent)
+    {
+        var results = new List<ResultObj>();
+        foreach (int id in monitorIPIDs)
+        {
+            var result = new ResultObj();
+            result = await _monitorMLDataRepo.UpdatePredictStatusFlags(id, null, alertSent);
+            results.Add(result);
+        }
+        return results;
+    }
+    // This method updates the AlertFlag field for multiple MonitorPingInfo objects based on the provided monitorIPIDs. The method returns a list of ResultObj objects indicating the success or failure of the update for each MonitorPingInfo. If the MonitorPingInfo with a given id is found in the MonitorPingInfos collection, the AlertFlag field is updated to the provided alertFlag value, and a success message is added to the ResultObj. If the MonitorPingInfo is not found, a failure message is added to the ResultObj.
+    public async Task<List<ResultObj>> UpdateAlertFlag(List<int> monitorIPIDs, bool alertFlag)
+    {
+        var results = new List<ResultObj>();
+        foreach (int id in monitorIPIDs)
+        {
+            var result = new ResultObj();
+            result = await _monitorMLDataRepo.UpdatePredictStatusFlags(id, alertFlag, null);
+            results.Add(result);
+        }
+        return results;
+    }
+    // This method resets the alert status for a list of MonitorPingInfos, specified by their monitorIPIDs, by setting the AlertFlag to false and AlertSent to false, and setting the DownCount to 0. It also publishes a message "alertMessageResetAlerts" with the list of AlertFlagObjs to the rabbitmq. The method returns a list of ResultObjs, which contains the success or failure of the operation and the relevant message.
+    public async Task<List<ResultObj>> ResetAlerts(List<int> monitorIPIDs)
+    {
+        var results = new List<ResultObj>();
+        ResultObj result;
+        var alertFlagObjs = new List<AlertFlagObj>();
+
+        foreach (int id in monitorIPIDs)
+        {
+            result = await _monitorMLDataRepo.UpdatePredictStatusFlags(id, false, false);
+            alertFlagObjs.Add(new AlertFlagObj() { ID = id });
+            results.Add(result);
+        }
+        results.Add(await PublishRepo.AlertMessgeResetPredictAlerts(_rabbitRepo, alertFlagObjs, _systemParams.ServiceID, _systemParams.ServiceAuthKey));
+        return results;
+    }
+
 }
 
 
