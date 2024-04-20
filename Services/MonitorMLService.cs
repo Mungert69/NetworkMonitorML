@@ -232,9 +232,11 @@ public class MonitorMLService : IMonitorMLService
             result.Data = (changeDetectionResult, spikeDetectionResult);
             _logger.LogDebug($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
             var predictStatus = monitorPingInfo.PredictStatus;
-            if (predictStatus == null) {
+            if (predictStatus == null)
+            {
                 _logger.LogWarning($" Warning : Creating new PredictStatus ?? {monitorPingInfo.Address} MonitorIPID {monitorPingInfo.MonitorIPID} ID {monitorPingInfo.ID}");
-                predictStatus = new PredictStatus(); }
+                predictStatus = new PredictStatus();
+            }
             predictStatus.ChangeDetectionResult = changeDetectionResult;
             predictStatus.SpikeDetectionResult = spikeDetectionResult;
             predictStatus.EventTime = monitorPingInfo.DateEnded;
@@ -482,22 +484,27 @@ public class MonitorMLService : IMonitorMLService
         result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
 
         result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
-
+        string dateOfDetection = "N/A";
         // Check if there are any detections before calculating average and minimum
         if (result.NumberOfDetections > 0)
         {
             result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
             result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
+            int index = predictions.FindIndex(p => p.Prediction[0] == 1);
+            result.IndexOfFirstDetection = (int)localPingInfos[index].DateSentInt;
+            var datePingInfo = new PingInfo() { DateSentInt = localPingInfos[index].DateSentInt };
+            dateOfDetection = datePingInfo.DateSent.ToLongDateString() + " UTC";
+
+
         }
 
         // Ensure there are predictions before attempting to find the max Martingale value
         if (predictions.Any())
         {
             result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
+
         }
-        int index = predictions.FindIndex(p => p.Prediction[0] == 1);
-        result.IndexOfFirstDetection = index;
-        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at index {index}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
+        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at {dateOfDetection}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
         result.Result.Success = true;
 
         return result;
@@ -587,17 +594,20 @@ public class MonitorMLService : IMonitorMLService
         result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
         result.IsIssueDetected = result.NumberOfDetections > SpikeDetectionThreshold;
 
+        string dateOfDetection = "N/A";
         // Check if there are any detections before calculating average and minimum
         if (result.NumberOfDetections > 0)
         {
+            int index = predictions.FindIndex(p => p.Prediction[0] == 1);
+
+            result.IndexOfFirstDetection = (int)localPingInfos[index].DateSentInt;
+            var datePingInfo = new PingInfo() { DateSentInt = localPingInfos[index].DateSentInt };
+            dateOfDetection = datePingInfo.DateSent.ToLongDateString() + " UTC";
             result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
             result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
         }
 
-
-        int index = predictions.FindIndex(p => p.Prediction[0] == 1);
-        result.IndexOfFirstDetection = index;
-        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at index {index}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
+        result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at {dateOfDetection}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
         result.Result.Success = true;
 
         return result;
