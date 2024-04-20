@@ -63,7 +63,6 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
             // First, get all MonitorIPIDs that have a DataSetID = 0 entry.
             var monitorIPIDs = await monitorContext.MonitorPingInfos.AsNoTracking()
-            .Include(i => i.PredictStatus)
                 .Where(mpi => mpi.DataSetID == 0)
                 .Select(mpi => mpi.MonitorIPID)
                 .ToListAsync();

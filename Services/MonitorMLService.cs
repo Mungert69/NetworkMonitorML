@@ -233,7 +233,7 @@ public class MonitorMLService : IMonitorMLService
             _logger.LogDebug($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
             var predictStatus = monitorPingInfo.PredictStatus;
             if (predictStatus == null) {
-                _logger.LogWarning(" Warning : Creating new PredictStatus ??");
+                _logger.LogWarning($" Warning : Creating new PredictStatus ?? {monitorPingInfo.Address} MonitorIPID {monitorPingInfo.MonitorIPID} ID {monitorPingInfo.ID}");
                 predictStatus = new PredictStatus(); }
             predictStatus.ChangeDetectionResult = changeDetectionResult;
             predictStatus.SpikeDetectionResult = spikeDetectionResult;
