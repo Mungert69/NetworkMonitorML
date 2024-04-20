@@ -296,14 +296,19 @@ public class MonitorMLService : IMonitorMLService
 
         if (isChangeDetected && isSpikeDetected)
         {
+
             analysisFeedback += "Possible issues detected. ";
             if (isChangeDetected)
             {
-                analysisFeedback += $"Changes detected: first change at index {changeDetectionResult.IndexOfFirstDetection} ,number of changes {changeDetectionResult.NumberOfDetections}, Avg Score: {changeDetectionResult.AverageScore:F2}, Min P-Value: {changeDetectionResult.MinPValue:F2}. ";
+                var datePingInfo = new PingInfo();
+                datePingInfo.DateSentInt = (uint)changeDetectionResult.IndexOfFirstDetection;
+                analysisFeedback += $"Changes detected: first change at {datePingInfo.DateSent} ,number of changes {changeDetectionResult.NumberOfDetections}, Avg Respone Time: {changeDetectionResult.AverageScore:F2}, Certainty score : {changeDetectionResult.MinPValue:F2} (closer to zero is more certain). ";
             }
             if (isSpikeDetected)
             {
-                analysisFeedback += $"Spikes detected: first spike at index {changeDetectionResult.IndexOfFirstDetection}, number of spikes {spikeDetectionResult.NumberOfDetections}, Avg Score: {spikeDetectionResult.AverageScore:F2}, Min P-Value: {spikeDetectionResult.MinPValue:F2}. ";
+                var datePingInfo = new PingInfo();
+                datePingInfo.DateSentInt = (uint)spikeDetectionResult.IndexOfFirstDetection;
+                analysisFeedback += $"Spikes detected: first spike at {datePingInfo.DateSent}, number of spikes {spikeDetectionResult.NumberOfDetections}, Avg Response Time: {spikeDetectionResult.AverageScore:F2}, Certainty score: {spikeDetectionResult.MinPValue:F2} (closer to zero is more certain). ";
             }
         }
         else
