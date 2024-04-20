@@ -226,21 +226,19 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
       }*/
 
     public bool RemoveMonitorPingInfos(List<int> monitorIPIDs)
-    {
-        if (!_isDataFull) return false;
-        if (monitorIPIDs != null && monitorIPIDs.Count() != 0)
-        {
-            var removeMonitorPingInfos = _cachedMonitorPingInfos
-                                         .Where(w => monitorIPIDs.Contains(w.MonitorIPID) && w.DataSetID == 0)
-                                         .ToList();
+{
+    if (!_isDataFull || monitorIPIDs == null || monitorIPIDs.Count == 0)
+        return false;
 
-            foreach (var itemToRemove in removeMonitorPingInfos)
-            {
-                _cachedMonitorPingInfos.Remove(itemToRemove);
-            }
-        }
-        return true;
-    }
+    // Use a HashSet for O(1) complexity on lookups
+    var idsToRemove = new HashSet<int>(monitorIPIDs);
+
+    // Remove items directly without creating a temporary list
+    _cachedMonitorPingInfos.RemoveAll(mpi => idsToRemove.Contains(mpi.MonitorIPID) && mpi.DataSetID == 0);
+
+    return true;
+}
+
 
 
 
