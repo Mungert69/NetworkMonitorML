@@ -98,49 +98,44 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
     public async Task<MonitorPingInfo?> GetDBWithContextMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID, MonitorContext monitorContext)
     {
-        var latestMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
-             .Where(w => w.Enabled && w.MonitorIPID == monitorIPID && w.DataSetID == dataSetID)
-             .Include(p => p.PredictStatus)
-             .Include(mpi => mpi.PingInfos)
-             .FirstOrDefaultAsync();
+        // Query the latest or specific MonitorPingInfo
+        var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
+            .AsNoTracking()
+            .Include(mpi => mpi.PingInfos)
+            .Include(mpi => mpi.PredictStatus)
+            .Where(mpi => mpi.Enabled && mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID)
+            .FirstOrDefaultAsync();
 
-        if (latestMonitorPingInfo == null) return null;
+        if (latestMonitorPingInfo == null)
+            return null;
 
+        // Calculate if additional PingInfos are needed to reach the windowSize
         int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
-
         if (additionalPingInfosNeeded > 0)
         {
-            int previousDataSetID;
-            if (dataSetID == 0)
-            {
-                previousDataSetID = await monitorContext.MonitorPingInfos.AsNoTracking().MaxAsync(mpi => mpi.DataSetID);
-            }
-            else
-            {
-                previousDataSetID = dataSetID--;
-            }
+            // Determine the previous DataSetID
+            int previousDataSetID = dataSetID == 0
+                ? await monitorContext.MonitorPingInfos.AsNoTracking().MaxAsync(mpi => mpi.DataSetID)
+                : dataSetID - 1;
 
-            var previousMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking()
-            .Where(w => w.Enabled && w.MonitorIPID == monitorIPID && w.DataSetID == previousDataSetID)
-                .Include(mpi => mpi.PingInfos)
-                .FirstOrDefaultAsync();
-
-            if (previousMonitorPingInfo != null)
-            {
-                var additionalPingInfos = previousMonitorPingInfo.PingInfos
+            // Retrieve additional PingInfos from the previous dataset if available
+            var additionalPingInfos = await monitorContext.MonitorPingInfos
+                .AsNoTracking()
+                .Where(mpi => mpi.Enabled && mpi.MonitorIPID == monitorIPID && mpi.DataSetID == previousDataSetID)
+                .SelectMany(mpi => mpi.PingInfos)
                 .OrderByDescending(pi => pi.DateSentInt)
                 .Take(additionalPingInfosNeeded)
-                .ToList();
+                .ToListAsync();
 
-                latestMonitorPingInfo.PingInfos.AddRange(additionalPingInfos);
-            }
+            latestMonitorPingInfo.PingInfos.AddRange(additionalPingInfos);
         }
 
-        latestMonitorPingInfo.PingInfos = latestMonitorPingInfo.PingInfos
-            .OrderBy(pi => pi.DateSentInt)
-            .ToList();
+        // Sort PingInfos by DateSentInt
+        latestMonitorPingInfo.PingInfos.Sort((x, y) => x.DateSentInt.CompareTo(y.DateSentInt));
+
         return latestMonitorPingInfo;
     }
+
     public async Task<MonitorPingInfo?> GetDBMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
     {
         _windowSize = windowSize;
@@ -287,29 +282,37 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         return result;
     }
 
-    // Helper method for managing PingInfos
     private void ManagePingInfos(MonitorPingInfo cachedMonitorPingInfo, List<PingInfo> updatedPingInfos)
     {
+        if (updatedPingInfos == null || updatedPingInfos.Count == 0)
+            return;
 
-        // 1. Build a set of existing DateSentInt values:
-        var existingDateSents = new HashSet<uint>(cachedMonitorPingInfo.PingInfos.Select(pi => pi.DateSentInt));
-
-        // 2. Sort and Filter updatedPingInfos to remove duplicates:
-
-        var newPingInfos = updatedPingInfos.OrderBy(pi => pi.DateSentInt)
-                                       .Where(pi => !existingDateSents.Contains(pi.DateSentInt))
-                                       .ToList();
-
-        // 3. Remove oldest if necessary:
-        while (cachedMonitorPingInfo.PingInfos.Count + newPingInfos.Count > _windowSize)
+        // Use a dictionary for faster lookup and avoiding duplicates.
+        var existingDateSents = new Dictionary<uint, PingInfo>(cachedMonitorPingInfo.PingInfos.Count);
+        foreach (var pi in cachedMonitorPingInfo.PingInfos)
         {
-            cachedMonitorPingInfo.PingInfos.RemoveAt(0); // Remove oldest
+            existingDateSents[pi.DateSentInt] = pi;
         }
 
-        // 4. Add the filtered new PingInfos:
-        cachedMonitorPingInfo.PingInfos.AddRange(newPingInfos);
-    }
+        // Process each new ping info only if it doesn't exist already.
+        foreach (var newPi in updatedPingInfos)
+        {
+            if (!existingDateSents.ContainsKey(newPi.DateSentInt))
+            {
+                cachedMonitorPingInfo.PingInfos.Add(newPi);
+            }
+        }
 
+        // Sort once after all new elements are added.
+        cachedMonitorPingInfo.PingInfos.Sort((x, y) => x.DateSentInt.CompareTo(y.DateSentInt));
+
+        // Ensure the collection does not exceed the window size by removing the oldest entries first.
+        int excess = cachedMonitorPingInfo.PingInfos.Count - _windowSize;
+        if (excess > 0)
+        {
+            cachedMonitorPingInfo.PingInfos.RemoveRange(0, excess);
+        }
+    }
 
     public async Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus)
     {
@@ -390,8 +393,8 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                 var monitorPingInfo = await monitorContext.MonitorPingInfos
                     .Include(mpi => mpi.PredictStatus) // Include PredictStatus if it's a separate entity
                     .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
-                var cachedMonitorPingInfo=_cachedMonitorPingInfos.FirstOrDefault(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
-              
+                var cachedMonitorPingInfo = _cachedMonitorPingInfos.FirstOrDefault(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
+
                 if (monitorPingInfo == null)
                 {
                     result.Success = false;
@@ -399,7 +402,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                     _logger.LogError(result.Message);
                     return result;
                 }
-                 if (cachedMonitorPingInfo == null)
+                if (cachedMonitorPingInfo == null)
                 {
                     result.Success = false;
                     result.Message = $" Error : Cached MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID 0 not found.";
@@ -413,7 +416,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                     if (alertFlag != null) monitorPingInfo.PredictStatus.AlertFlag = (bool)alertFlag;
                     if (sentFlag != null) monitorPingInfo.PredictStatus.AlertSent = (bool)sentFlag;
                 }
-                 if (cachedMonitorPingInfo.PredictStatus != null)
+                if (cachedMonitorPingInfo.PredictStatus != null)
                 {
                     if (alertFlag != null) cachedMonitorPingInfo.PredictStatus.AlertFlag = (bool)alertFlag;
                     if (sentFlag != null) cachedMonitorPingInfo.PredictStatus.AlertSent = (bool)sentFlag;
