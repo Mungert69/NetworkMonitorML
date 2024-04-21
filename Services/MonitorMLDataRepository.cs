@@ -23,6 +23,7 @@ public interface IMonitorMLDataRepo
     bool RemoveMonitorPingInfos(List<int> monitorIPIDs);
     ResultObj UpdateMonitorPingInfo(MonitorPingInfo updatedMonitorPingInfo);
     Task<ResultObj> UpdatePredictStatusFlags(int monitorIPID, bool? alertFlag, bool? sentFlag);
+    Task SearchOrCreatePredictStatus(MonitorPingInfo monitorPingInfo);
 }
 public class MonitorMLDataRepo : IMonitorMLDataRepo
 {
@@ -226,18 +227,18 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
       }*/
 
     public bool RemoveMonitorPingInfos(List<int> monitorIPIDs)
-{
-    if (!_isDataFull || monitorIPIDs == null || monitorIPIDs.Count == 0)
-        return false;
+    {
+        if (!_isDataFull || monitorIPIDs == null || monitorIPIDs.Count == 0)
+            return false;
 
-    // Use a HashSet for O(1) complexity on lookups
-    var idsToRemove = new HashSet<int>(monitorIPIDs);
+        // Use a HashSet for O(1) complexity on lookups
+        var idsToRemove = new HashSet<int>(monitorIPIDs);
 
-    // Remove items directly without creating a temporary list
-    _cachedMonitorPingInfos.RemoveAll(mpi => idsToRemove.Contains(mpi.MonitorIPID) && mpi.DataSetID == 0);
+        // Remove items directly without creating a temporary list
+        _cachedMonitorPingInfos.RemoveAll(mpi => idsToRemove.Contains(mpi.MonitorIPID) && mpi.DataSetID == 0);
 
-    return true;
-}
+        return true;
+    }
 
 
 
@@ -261,6 +262,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         var cachedMonitorPingInfo = _cachedMonitorPingInfos?.FirstOrDefault(mpi =>
                              mpi.MonitorIPID == updatedMonitorPingInfo.MonitorIPID && mpi.DataSetID == updatedMonitorPingInfo.DataSetID);
 
+
         if (cachedMonitorPingInfo == null)
         {
             _cachedMonitorPingInfos!.Add(updatedMonitorPingInfo);
@@ -268,6 +270,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             result.Message = " Success : Added new MonitorPingInfo ";
             return result;
         }
+
 
         // 2. Update properties from the passed 'updatedMonitorPingInfo'
         cachedMonitorPingInfo.CopyForPredict(updatedMonitorPingInfo);
@@ -338,9 +341,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                 // Update the MonitorPingInfo object with the prediction results
                 if (monitorPingInfo.PredictStatus == null)
                 {
-                    predictStatus.MonitorPingInfoID = monitorPingInfo.ID;
-                    monitorContext.PredictStatuses.Add(predictStatus);
-
+                    monitorPingInfo.PredictStatus = predictStatus;
                 }
                 else
                 {
@@ -375,6 +376,27 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
         return result;
     }
+
+    public async Task SearchOrCreatePredictStatus(MonitorPingInfo monitorPingInfo)
+    {
+        using (var scope = _scopeFactory.CreateScope())
+        {
+            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+            int maxId = await monitorContext.MonitorPingInfos.Where(w => w.PredictStatus != null && w.MonitorIPID == monitorPingInfo.MonitorIPID).MaxAsync(m => m.ID);
+            var maxMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking().Where(w => w.ID == maxId).FirstOrDefaultAsync();
+            if (maxMonitorPingInfo != null && maxMonitorPingInfo.PredictStatus != null)
+            {
+                maxMonitorPingInfo.PredictStatus.MonitorPingInfoID = 0;
+                maxMonitorPingInfo.PredictStatus.ID = 0;
+                monitorPingInfo.PredictStatus = maxMonitorPingInfo.PredictStatus;
+            }
+            else
+            {
+                monitorPingInfo.PredictStatus = new PredictStatus();
+            }
+        }
+    }
+
 
 
     public async Task<ResultObj> UpdatePredictStatusFlags(int monitorIPID, bool? alertFlag, bool? sentFlag)
