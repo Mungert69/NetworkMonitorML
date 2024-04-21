@@ -148,11 +148,12 @@ public class MonitorMLService : IMonitorMLService
                 return result;
             }
             var results = new List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>();
-            foreach (var monitorPingInfo in latestMonitorPingInfos)
+            foreach (var monitorPingInfo in latestMonitorPingInfos.Where(w => w.Enabled))
             {
-                if (monitorPingInfo.PingInfos.Count() < _mlParams.PredictWindow) {
+                if (monitorPingInfo.PingInfos.Count < _mlParams.PredictWindow)
+                {
                     _logger.LogError($" Error : not enough PingInfos in last two data sets for MonitorPingInfo with ID {monitorPingInfo.ID} EndPointType {monitorPingInfo.EndPointType}");
-                 }
+                }
                 else results.Add(await CheckHost(monitorPingInfo));
             }
             ResultObj resultPublish = new ResultObj();
