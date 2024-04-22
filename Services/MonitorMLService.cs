@@ -73,6 +73,7 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task Init()
     {
+        await PublishRepo.PredictReady(_logger, _rabbitRepo, false);
         try
         {
             await _monitorMLDataRepo.GetLatestMonitorPingInfos(_mlParams.PredictWindow);
@@ -81,6 +82,7 @@ public class MonitorMLService : IMonitorMLService
         {
             _logger.LogCritical($" Error : unable to init Service . Error was : {e.Message}");
         }
+         await PublishRepo.PredictReady(_logger, _rabbitRepo, true);
     }
     private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence, int preTrain)
     {
@@ -125,10 +127,12 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task<ResultObj> CheckLatestHosts()
     {
+         await PublishRepo.PredictReady(_logger, _rabbitRepo, false);
         TResultObj<List<TResultObj<(DetectionResult changeResult, DetectionResult SpikeResult)>>> testResult = await CheckLatestHostsTest();
         var result = new ResultObj();
         result.Success = testResult.Success;
         result.Message = testResult.Message;
+         await PublishRepo.PredictReady(_logger, _rabbitRepo, true);
         return result;
     }
     public async Task<TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>> CheckLatestHostsTest()

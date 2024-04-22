@@ -296,12 +296,10 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         var result = new ResultObj();
         result.Success = false;
         result.Message = "MessageAPI : CheckLatestHosts : ";
-
-
         try
         {
             result = await _mlService.CheckLatestHosts();
-            _logger.LogInformation(result.Message);
+            //_logger.LogInformation(result.Message);
         }
         catch (Exception e)
         {

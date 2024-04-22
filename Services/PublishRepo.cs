@@ -133,35 +133,20 @@ namespace NetworkMonitor.ML.Repository
             }
             return result;
         }
-        /*public static void ProcessorReadyThreadOLD(ILogger logger, DaprClient daprClient, string appID, bool isReady)
-        {
-            Thread thread = new Thread(delegate ()
-                                    {
-                                        PublishRepo.ProcessorReady(logger, daprClient, appID, isReady);
-                                    });
-            thread.Start();
-        }
-        private static void ProcessorReady(ILogger logger, DaprClient daprClient, string appID, bool isReady)
-        {
-            var processorObj = new ProcessorInitObj();
-            processorObj.IsProcessorReady = isReady;
-            processorObj.AppID = appID;
-            DaprRepo.PublishEvent<ProcessorInitObj>(daprClient, "processorReady", processorObj);
-            logger.LogInformation(" Published event ProcessorItitObj.IsProcessorReady = false ");
-        }*/
-        public static async Task PredictReady(ILogger logger, IRabbitRepo rabbitRepo, string appID, bool isReady)
+        
+        
+        public static async Task PredictReady(ILogger logger, IRabbitRepo rabbitRepo, bool isReady)
         {
             try
             {
-                var processorObj = new ProcessorInitObj();
-                processorObj.IsProcessorReady = isReady;
-                processorObj.AppID = appID;
-                await rabbitRepo.PublishAsync<ProcessorInitObj>("predictReady", processorObj);
-                logger.LogInformation(" Published event ProcessorItitObj.IsPredictReady = " + isReady);
+                var monitorMLObj = new MonitorMLInitObj();
+                monitorMLObj.IsMLReady = isReady;
+                await rabbitRepo.PublishAsync<MonitorMLInitObj>("predictServiceReady", monitorMLObj);
+                logger.LogInformation(" Published event MonitorMLItitObj.IsMLReady = " + isReady);
             }
             catch (Exception e)
             {
-                logger.LogError(" Error : Could not Publish event ProcessorItitObj.IsPredictReady . Erro was : " + e.Message);
+                logger.LogError(" Error : Could not Publish event MonitorMLItitObj.IsPredictReady . Erro was : " + e.Message);
             }
         }
 
