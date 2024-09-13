@@ -1,18 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
+	<PropertyGroup>
+		 <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ContainerBaseImage>mcr.microsoft.com/dotnet/runtime:8.0</ContainerBaseImage>
     <ContainerRepository>mungert/networkmonitorpredict</ContainerRepository>
-    <ContainerImageTag>0.0.10</ContainerImageTag>
+      <IsPublishable>true</IsPublishable>
+  <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
+    <ContainerImageTag>0.0.11</ContainerImageTag>
     <StartupObject>NetworkMonitor.ML.Program</StartupObject>
+    <Optimize Condition="'$(Publishing)' == 'true'">true</Optimize>
+    <Optimize Condition="'$(Publishing)' != 'true'">false</Optimize>
   </PropertyGroup>
 
   <ItemGroup>
-	      <PackageReference Include="Microsoft.NET.Build.Containers" Version="8.0.200" />
-
     <PackageReference Include="Microsoft.ML" Version="2.0.1" />
     <PackageReference Include="Microsoft.ML.TimeSeries" Version="2.0.1" />
     <PackageReference Include="MKL.NET.linux-x64" Version="2022.0.1.117" />
