@@ -8,7 +8,7 @@
     <ContainerRepository>mungert/networkmonitorpredict</ContainerRepository>
       <IsPublishable>true</IsPublishable>
   <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
-    <ContainerImageTag>0.0.11</ContainerImageTag>
+    <ContainerImageTag>0.0.12</ContainerImageTag>
     <StartupObject>NetworkMonitor.ML.Program</StartupObject>
     <Optimize Condition="'$(Publishing)' == 'true'">true</Optimize>
     <Optimize Condition="'$(Publishing)' != 'true'">false</Optimize>
@@ -21,7 +21,7 @@
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="TensorFlow.NET" Version="0.150.0" />
      <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-    <PackageReference Include="xunit" Version="2.9.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
@@ -30,7 +30,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.8" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="8.0.10" />
 
   </ItemGroup>
 
