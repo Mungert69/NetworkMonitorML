@@ -5,13 +5,23 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ContainerBaseImage>mcr.microsoft.com/dotnet/aspnet:8.0</ContainerBaseImage>
-    <ContainerRepository>mungert/networkmonitorpredict</ContainerRepository>
+    
       <IsPublishable>true</IsPublishable>
   <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
     <ContainerImageTag>0.0.12</ContainerImageTag>
     <StartupObject>NetworkMonitor.ML.Program</StartupObject>
     <Optimize Condition="'$(Publishing)' == 'true'">true</Optimize>
     <Optimize Condition="'$(Publishing)' != 'true'">false</Optimize>
+  </PropertyGroup>
+<PropertyGroup Condition="'$(Configuration)'=='Release-Dev'">
+    <DefineConstants>DEV</DefineConstants>
+        <Optimize>true</Optimize>
+        <ContainerRepository>mungert/networkmonitorpredict-dev</ContainerRepository>
+</PropertyGroup>
+ <!-- Conditional AOT and optimization for Release configuration -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <Optimize>true</Optimize>
+    <ContainerRepository>mungert/networkmonitorpredict</ContainerRepository>
   </PropertyGroup>
 
   <ItemGroup>

@@ -220,7 +220,7 @@ public class MonitorMLTestData
             AppID = "test",
             EndPointType = "icmp",
             Timeout = 10000,
-            AddUserEmail = "support@mahadeva.co.uk",
+            AddUserEmail = $"support@{AppConstants.EmailDomain}",
             // Assuming these properties come from StatusObj and are relevant
             AlertFlag = false,
             AlertSent = false,
@@ -259,7 +259,7 @@ public class MonitorMLTestData
             AppID = "test",
             EndPointType = "icmp",
             Timeout = 10000,
-            AddUserEmail = "support@mahadeva.co.uk",
+            AddUserEmail = $"support@{AppConstants.EmailDomain}",
             // Assuming these properties come from StatusObj and are relevant
             AlertFlag = false,
             AlertSent = false,
@@ -323,7 +323,7 @@ public class MonitorMLTestData
         userInfos.Add(new UserInfo()
         {
             UserID = "test",
-            Email = "support@mahadeva.co.uk",
+            Email = $"support@{AppConstants.EmailDomain}",
             Email_verified = true,
             DisableEmail = false,
             Name = "test user"
@@ -332,7 +332,7 @@ public class MonitorMLTestData
         userInfos.Add(new UserInfo()
         {
             UserID = "default",
-            Email = "support@mahadeva.co.uk",
+            Email = $"support@{AppConstants.EmailDomain}",
             Email_verified = true,
             DisableEmail = false,
             Name = "default"
