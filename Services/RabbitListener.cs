@@ -90,40 +90,40 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
 
 
     }
-    protected override ResultObj DeclareConsumers()
+    protected override async Task<ResultObj> DeclareConsumers()
     {
         var result = new ResultObj();
         result.Success = true;
         try
         {
-            _rabbitMQObjs.ForEach(rabbitMQObj =>
+            foreach (var rabbitMQObj in _rabbitMQObjs)
         {
             if (rabbitMQObj.ConnectChannel == null)
             {
                 result.Message += $" Error : RabbitListener Connect Channel not open for Exchange {rabbitMQObj.ExchangeName}";
                 result.Success = false;
                 _logger.LogCritical(result.Message);
-                return;
+                return result;
             }
-            rabbitMQObj.Consumer = new EventingBasicConsumer(rabbitMQObj.ConnectChannel);
+            rabbitMQObj.Consumer = new AsyncEventingBasicConsumer(rabbitMQObj.ConnectChannel);
 
             if (rabbitMQObj.Consumer == null)
             {
                 result.Message += $" Error : RabbitListener can't create Consumer for queue  {rabbitMQObj.QueueName}";
                 result.Success = false;
                 _logger.LogCritical(result.Message);
-                return;
+                return result;
             }
             switch (rabbitMQObj.FuncName)
             {
                 case "mlCheck":
-                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.Received += async (model, ea) =>
+                    await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
                 {
                     try
                     {
                         result = await MLCheck(ConvertToObject<MonitorMLInitObj>(model, ea));
-                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                        await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
                     }
                     catch (Exception ex)
                     {
@@ -132,13 +132,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                 };
                     break;
                 case "mlCheckHost":
-                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.Received += async (model, ea) =>
+                    await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
                 {
                     try
                     {
                         result = await CheckHost(ConvertToObject<MonitorMLCheckObj>(model, ea));
-                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                        await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
                     }
                     catch (Exception ex)
                     {
@@ -147,13 +147,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                 };
                     break;
                 case "mlCheckLatestHosts":
-                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.Received += async (model, ea) =>
+                    await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
                 {
                     try
                     {
                         result = await CheckLatestHosts();
-                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                        await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
                     }
                     catch (Exception ex)
                     {
@@ -162,13 +162,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                 };
                     break;
                 case "predictPingInfos":
-                    rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.Received += (model, ea) =>
+                    await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                    rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
                 {
                     try
                     {
                         result = UpdatePingInfos(ConvertToObject<ProcessorDataObj>(model, ea));
-                        rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                        await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
                     }
                     catch (Exception ex)
                     {
@@ -177,13 +177,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                 };
                     break;
                      case "predictAlertFlag":
-                            rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                            rabbitMQObj.Consumer.Received += async (model, ea) =>
+                            await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                            rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
                         {
                             try
                             {
                                 result = await AlertFlag(ConvertToList<List<int>>(model, ea));
-                                rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                                await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
                             }
                             catch (Exception ex)
                             {
@@ -192,13 +192,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                         };
                             break;
                         case "predictAlertSent":
-                            rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                            rabbitMQObj.Consumer.Received += async (model, ea) =>
+                            await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                            rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
                         {
                             try
                             {
                                 result = await AlertSent(ConvertToList<List<int>>(model, ea));
-                                rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                                await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
                             }
                             catch (Exception ex)
                             {
@@ -207,13 +207,13 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                         };
                             break;
                         case "predictResetAlerts":
-                            rabbitMQObj.ConnectChannel.BasicQos(prefetchSize: 0, prefetchCount: 1, global: false);
-                            rabbitMQObj.Consumer.Received += async (model, ea) =>
+                            await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                            rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
                         {
                             try
                             {
                                 result = await ResetAlerts(ConvertToList<List<int>>(model, ea));
-                                rabbitMQObj.ConnectChannel.BasicAck(ea.DeliveryTag, false);
+                                await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
                             }
                             catch (Exception ex)
                             {
@@ -224,7 +224,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                        
 
             }
-        });
+        }
             if (result.Success) result.Message += " Success : Declared all consumers ";
         }
         catch (Exception e)
