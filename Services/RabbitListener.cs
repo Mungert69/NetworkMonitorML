@@ -23,7 +23,8 @@ public interface IRabbitListener
 {
 
     Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj);
-
+        Task Shutdown();
+        Task<ResultObj> Setup();
 
 
 }
