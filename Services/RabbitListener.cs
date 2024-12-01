@@ -37,7 +37,6 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
     {
 
         _mlService = mlService;
-        Setup();
     }
 
     private static SystemUrl DeriveSystemUrl(ISystemParamsHelper systemParamsHelper)
