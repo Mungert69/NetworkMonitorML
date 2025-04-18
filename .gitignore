@@ -352,3 +352,4 @@ nohup.out
 /wwwroot/files/*
 /data/*
 /.mono
+.env
