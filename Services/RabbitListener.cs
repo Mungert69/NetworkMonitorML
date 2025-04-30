@@ -23,8 +23,8 @@ public interface IRabbitListener
 {
 
     Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj);
-        Task Shutdown();
-        Task<ResultObj> Setup();
+    Task Shutdown();
+    Task<ResultObj> Setup();
 
 
 }
@@ -96,135 +96,131 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         result.Success = true;
         try
         {
-            foreach (var rabbitMQObj in _rabbitMQObjs)
-        {
-            if (rabbitMQObj.ConnectChannel == null)
-            {
-                result.Message += $" Error : RabbitListener Connect Channel not open for Exchange {rabbitMQObj.ExchangeName}";
-                result.Success = false;
-                _logger.LogCritical(result.Message);
-                return result;
-            }
-            rabbitMQObj.Consumer = new AsyncEventingBasicConsumer(rabbitMQObj.ConnectChannel);
+            await Parallel.ForEachAsync(_rabbitMQObjs, async (rabbitMQObj, cancellationToken) =>
+               {
 
-            if (rabbitMQObj.Consumer == null)
-            {
-                result.Message += $" Error : RabbitListener can't create Consumer for queue  {rabbitMQObj.QueueName}";
-                result.Success = false;
-                _logger.LogCritical(result.Message);
-                return result;
-            }
-            switch (rabbitMQObj.FuncName)
-            {
-                case "mlCheck":
-                    await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                {
-                    try
-                    {
-                        result = await MLCheck(ConvertToObject<MonitorMLInitObj>(model, ea));
-                        await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheck " + ex.Message);
-                    }
-                };
-                    break;
-                case "mlCheckHost":
-                    await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                {
-                    try
-                    {
-                        result = await CheckHost(ConvertToObject<MonitorMLCheckObj>(model, ea));
-                        await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckHost " + ex.Message);
-                    }
-                };
-                    break;
-                case "mlCheckLatestHosts":
-                    await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                {
-                    try
-                    {
-                        result = await CheckLatestHosts();
-                        await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckLatestHosts " + ex.Message);
-                    }
-                };
-                    break;
-                case "predictPingInfos":
-                    await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                    rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                {
-                    try
-                    {
-                        result = UpdatePingInfos(ConvertToObject<ProcessorDataObj>(model, ea));
-                        await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictPingInfos " + ex.Message);
-                    }
-                };
-                    break;
-                     case "predictAlertFlag":
-                            await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                            rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                        {
-                            try
-                            {
-                                result = await AlertFlag(ConvertToList<List<int>>(model, ea));
-                                await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictAlertFlag " + ex.Message);
-                            }
-                        };
-                            break;
-                        case "predictAlertSent":
-                            await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                            rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                        {
-                            try
-                            {
-                                result = await AlertSent(ConvertToList<List<int>>(model, ea));
-                                await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictAlertSent " + ex.Message);
-                            }
-                        };
-                            break;
-                        case "predictResetAlerts":
-                            await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                            rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                        {
-                            try
-                            {
-                                result = await ResetAlerts(ConvertToList<List<int>>(model, ea));
-                                await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictResetAlerts " + ex.Message);
-                            }
-                        };
-                            break;
-                       
+                   if (rabbitMQObj.ConnectChannel != null)
+                   {
 
-            }
-        }
+                       rabbitMQObj.Consumer = new AsyncEventingBasicConsumer(rabbitMQObj.ConnectChannel);
+                       await rabbitMQObj.ConnectChannel.BasicConsumeAsync(
+                               queue: rabbitMQObj.QueueName,
+                               autoAck: false,
+                               consumer: rabbitMQObj.Consumer
+                           );
+
+
+                       switch (rabbitMQObj.FuncName)
+                       {
+                           case "mlCheck":
+                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
+                            {
+                   try
+                   {
+                       result = await MLCheck(ConvertToObject<MonitorMLInitObj>(model, ea));
+                       await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
+                   }
+                   catch (Exception ex)
+                   {
+                       _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheck " + ex.Message);
+                   }
+               };
+                               break;
+                           case "mlCheckHost":
+                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
+                            {
+                   try
+                   {
+                       result = await CheckHost(ConvertToObject<MonitorMLCheckObj>(model, ea));
+                       await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
+                   }
+                   catch (Exception ex)
+                   {
+                       _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckHost " + ex.Message);
+                   }
+               };
+                               break;
+                           case "mlCheckLatestHosts":
+                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
+                            {
+                   try
+                   {
+                       result = await CheckLatestHosts();
+                       await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
+                   }
+                   catch (Exception ex)
+                   {
+                       _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckLatestHosts " + ex.Message);
+                   }
+               };
+                               break;
+                           case "predictPingInfos":
+                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
+                            {
+                   try
+                   {
+                       result = UpdatePingInfos(ConvertToObject<ProcessorDataObj>(model, ea));
+                       await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
+                   }
+                   catch (Exception ex)
+                   {
+                       _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictPingInfos " + ex.Message);
+                   }
+               };
+                               break;
+                           case "predictAlertFlag":
+                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
+                            {
+                           try
+                           {
+                               result = await AlertFlag(ConvertToList<List<int>>(model, ea));
+                               await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
+                           }
+                           catch (Exception ex)
+                           {
+                               _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictAlertFlag " + ex.Message);
+                           }
+                       };
+                               break;
+                           case "predictAlertSent":
+                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
+                            {
+                           try
+                           {
+                               result = await AlertSent(ConvertToList<List<int>>(model, ea));
+                               await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
+                           }
+                           catch (Exception ex)
+                           {
+                               _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictAlertSent " + ex.Message);
+                           }
+                       };
+                               break;
+                           case "predictResetAlerts":
+                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
+                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
+                            {
+                           try
+                           {
+                               result = await ResetAlerts(ConvertToList<List<int>>(model, ea));
+                               await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
+                           }
+                           catch (Exception ex)
+                           {
+                               _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictResetAlerts " + ex.Message);
+                           }
+                       };
+                               break;
+                       }
+
+                   }
+               });
             if (result.Success) result.Message += " Success : Declared all consumers ";
         }
         catch (Exception e)
@@ -336,108 +332,108 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         return result;
     }
 
-     public async Task<ResultObj> AlertFlag(List<int>? monitorIPIDs)
+    public async Task<ResultObj> AlertFlag(List<int>? monitorIPIDs)
+    {
+        ResultObj result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : AlertFlag : ";
+        if (monitorIPIDs == null)
         {
-            ResultObj result = new ResultObj();
             result.Success = false;
-            result.Message = "MessageAPI : AlertFlag : ";
-            if (monitorIPIDs == null)
-            {
-                result.Success = false;
-                result.Message += "Error : monitorIPIDs was null .";
-                _logger.LogError(result.Message);
-                return result;
-
-            }
-            try
-            {
-                monitorIPIDs.ForEach(f => _logger.LogDebug("AlertFlag Found monitorIPID=" + f));
-                List<ResultObj> results = await _mlService.UpdateAlertFlag(monitorIPIDs, true);
-                result.Success = results.Where(w => w.Success == false).ToList().Count() == 0;
-                if (result.Success) result.Message += "Success ran ok ";
-                else
-                {
-                    results.Select(s => s.Message).ToList().ForEach(f => result.Message += f);
-                    result.Data = results;
-                }
-                _logger.LogInformation(result.Message);
-            }
-            catch (Exception e)
-            {
-                result.Data = null;
-                result.Success = false;
-                result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
-                _logger.LogError(result.Message);
-            }
+            result.Message += "Error : monitorIPIDs was null .";
+            _logger.LogError(result.Message);
             return result;
-        }
-        public async Task<ResultObj> AlertSent(List<int>? monitorIPIDs)
-        {
-            ResultObj result = new ResultObj();
-            result.Success = false;
-            result.Message = "MessageAPI : AlertSent : ";
-            if (monitorIPIDs == null)
-            {
-                result.Success = false;
-                result.Message += "Error : monitorIPIDs was null .";
-                _logger.LogError(result.Message);
-                return result;
 
-            }
-            try
-            {
-                monitorIPIDs.ForEach(f => _logger.LogDebug("SentFlag Found monitorIPID =" + f));
-                List<ResultObj> results = await _mlService.UpdateAlertSent(monitorIPIDs, true);
-                result.Success = results.Where(w => w.Success == false).ToList().Count() == 0;
-                if (result.Success) result.Message += "Success ran ok ";
-                else
-                {
-                    results.Select(s => s.Message).ToList().ForEach(f => result.Message += f);
-                    result.Data = results;
-                }
-                _logger.LogInformation(result.Message);
-            }
-            catch (Exception e)
-            {
-                result.Data = null;
-                result.Success = false;
-                result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
-                _logger.LogError(result.Message);
-            }
-            return result;
         }
-        public async Task<ResultObj> ResetAlerts(List<int>? monitorIPIDs)
+        try
         {
-            ResultObj result = new ResultObj();
-            result.Success = false;
-            result.Message = "MessageAPI : ResetAlerts : ";
-            if (monitorIPIDs == null)
+            monitorIPIDs.ForEach(f => _logger.LogDebug("AlertFlag Found monitorIPID=" + f));
+            List<ResultObj> results = await _mlService.UpdateAlertFlag(monitorIPIDs, true);
+            result.Success = results.Where(w => w.Success == false).ToList().Count() == 0;
+            if (result.Success) result.Message += "Success ran ok ";
+            else
             {
-                result.Success = false;
-                result.Message += "Error : monitorIPIDs was null .";
-                _logger.LogError(result.Message);
-                return result;
-
-            }
-            try
-            {
-                var results = await  _mlService.ResetAlerts(monitorIPIDs);
-                results.ForEach(f => result.Message += f.Message);
-                result.Success = results.All(a => a.Success == true) && results.Count() != 0;
+                results.Select(s => s.Message).ToList().ForEach(f => result.Message += f);
                 result.Data = results;
-                if (result.Success == true)
-                    _logger.LogInformation(result.Message);
-                else _logger.LogError(result.Message);
             }
-            catch (Exception e)
-            {
-                result.Data = null;
-                result.Success = false;
-                result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
-                _logger.LogError(result.Message);
-            }
-            return result;
+            _logger.LogInformation(result.Message);
         }
-       
+        catch (Exception e)
+        {
+            result.Data = null;
+            result.Success = false;
+            result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+            _logger.LogError(result.Message);
+        }
+        return result;
+    }
+    public async Task<ResultObj> AlertSent(List<int>? monitorIPIDs)
+    {
+        ResultObj result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : AlertSent : ";
+        if (monitorIPIDs == null)
+        {
+            result.Success = false;
+            result.Message += "Error : monitorIPIDs was null .";
+            _logger.LogError(result.Message);
+            return result;
+
+        }
+        try
+        {
+            monitorIPIDs.ForEach(f => _logger.LogDebug("SentFlag Found monitorIPID =" + f));
+            List<ResultObj> results = await _mlService.UpdateAlertSent(monitorIPIDs, true);
+            result.Success = results.Where(w => w.Success == false).ToList().Count() == 0;
+            if (result.Success) result.Message += "Success ran ok ";
+            else
+            {
+                results.Select(s => s.Message).ToList().ForEach(f => result.Message += f);
+                result.Data = results;
+            }
+            _logger.LogInformation(result.Message);
+        }
+        catch (Exception e)
+        {
+            result.Data = null;
+            result.Success = false;
+            result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+            _logger.LogError(result.Message);
+        }
+        return result;
+    }
+    public async Task<ResultObj> ResetAlerts(List<int>? monitorIPIDs)
+    {
+        ResultObj result = new ResultObj();
+        result.Success = false;
+        result.Message = "MessageAPI : ResetAlerts : ";
+        if (monitorIPIDs == null)
+        {
+            result.Success = false;
+            result.Message += "Error : monitorIPIDs was null .";
+            _logger.LogError(result.Message);
+            return result;
+
+        }
+        try
+        {
+            var results = await _mlService.ResetAlerts(monitorIPIDs);
+            results.ForEach(f => result.Message += f.Message);
+            result.Success = results.All(a => a.Success == true) && results.Count() != 0;
+            result.Data = results;
+            if (result.Success == true)
+                _logger.LogInformation(result.Message);
+            else _logger.LogError(result.Message);
+        }
+        catch (Exception e)
+        {
+            result.Data = null;
+            result.Success = false;
+            result.Message += "Error : Failed to receive message : Error was : " + e.Message + " ";
+            _logger.LogError(result.Message);
+        }
+        return result;
+    }
+
 
 }
