@@ -33,16 +33,16 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
 {
     protected IMonitorMLService _mlService;
 
-    public RabbitListener(IMonitorMLService mlService, ILogger<RabbitListenerBase> logger, ISystemParamsHelper systemParamsHelper) : base(logger, DeriveSystemUrl(systemParamsHelper))
+    public RabbitListener(IMonitorMLService mlService, ILogger<RabbitListenerBase> logger, SystemParams systemParams) : base(logger, DeriveSystemUrl(systemParams))
     {
 
         _mlService = mlService;
     }
 
-    private static SystemUrl DeriveSystemUrl(ISystemParamsHelper systemParamsHelper)
-    {
-        return systemParamsHelper.GetSystemParams().ThisSystemUrl;
-    }
+    private static SystemUrl DeriveSystemUrl(SystemParams systemParams)
+        {
+            return systemParams.ThisSystemUrl;
+        }
     protected override void InitRabbitMQObjs()
     {
 

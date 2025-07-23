@@ -26,14 +26,14 @@ namespace NetworkMonitor.ML
     public class Startup
     {
         private readonly CancellationTokenSource _cancellationTokenSource;
-        #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
+#pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
         public Startup(IConfiguration configuration)
         {
             _cancellationTokenSource = new CancellationTokenSource();
             Configuration = configuration;
         }
-        #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
+#pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
         public IConfiguration Configuration { get; }
         private IServiceCollection _services;
@@ -71,8 +71,17 @@ namespace NetworkMonitor.ML
             services.AddSingleton<IRabbitRepo, RabbitRepo>();
             services.AddSingleton<IFileRepo, FileRepo>();
             services.AddSingleton<ISystemParamsHelper, SystemParamsHelper>();
-           
 
+            services.AddSingleton<MLParams>(sp =>
+                       {
+                           var systemParamsHelper = sp.GetRequiredService<ISystemParamsHelper>();
+                           return systemParamsHelper.GetMLParams();
+                       });
+            services.AddSingleton<SystemParams>(sp =>
+           {
+               var systemParamsHelper = sp.GetRequiredService<ISystemParamsHelper>();
+               return systemParamsHelper.GetSystemParams();
+           });
             services.AddSingleton(_cancellationTokenSource);
             services.Configure<HostOptions>(s => s.ShutdownTimeout = TimeSpan.FromMinutes(5));
             services.AddAsyncServiceInitialization()
@@ -86,7 +95,7 @@ namespace NetworkMonitor.ML
                     })
                  .AddInitAction<IRabbitListener>(async (rabbitListener) =>
                     {
-                         await rabbitListener.Setup();
+                        await rabbitListener.Setup();
                     });
         }
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
