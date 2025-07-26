@@ -207,25 +207,6 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     }
 
 
-    /*  public async Task<List<LocalPingInfo>> GetLocalPingInfosForHost(int monitorPingInfoID)
-      {
-          using (var scope = _scopeFactory.CreateScope())
-          {
-              var _context = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-              var localPingInfos = await _context.PingInfos
-         .Where(p => p.MonitorPingInfoID == monitorPingInfoID)
-         .Select(p => new LocalPingInfo
-         {
-             DateSentInt = p.DateSentInt,
-             RoundTripTime = p.RoundTripTime ?? 0,
-             StatusID = p.StatusID
-         }).ToListAsync();
-
-              return localPingInfos;
-          }
-
-      }*/
-
     public bool RemoveMonitorPingInfos(List<int> monitorIPIDs)
     {
         if (!_isDataFull || monitorIPIDs == null || monitorIPIDs.Count == 0)
@@ -242,6 +223,16 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
 
 
+private void UpdateCachedPredictStatus(int monitorIPID, PredictStatus updated)
+{
+    var cached = _cachedMonitorPingInfos
+        .FirstOrDefault(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
+
+    if (cached != null)
+    {
+        cached.PredictStatus = updated;
+    }
+}
 
     public ResultObj UpdateMonitorPingInfo(MonitorPingInfo updatedMonitorPingInfo)
     {
@@ -317,61 +308,59 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
     public async Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus)
     {
-        ResultObj result = new ResultObj();
+        var result = new ResultObj();
 
-        using (var scope = _scopeFactory.CreateScope())
+        using var scope = _scopeFactory.CreateScope();
+        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+
+        try
         {
-            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+            // Step 1: Get MonitorPingInfo ID
+            var monitorPingInfoID = await monitorContext.MonitorPingInfos
+                .Where(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID)
+                .Select(mpi => mpi.ID)
+                .FirstOrDefaultAsync();
 
-            try
-            {
-                // Fetch the MonitorPingInfo object by ID
-                var monitorPingInfo = await monitorContext.MonitorPingInfos
-                    .Include(mpi => mpi.PredictStatus) // Include PredictStatus if it's a separate entity
-                    .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
-
-                if (monitorPingInfo == null)
-                {
-                    result.Success = false;
-                    result.Message = $" Error : MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID {dataSetID} not found.";
-                    _logger.LogError(result.Message);
-                    return result;
-                }
-                //var flag = false;
-                // Update the MonitorPingInfo object with the prediction results
-                if (monitorPingInfo.PredictStatus == null)
-                {
-                    monitorPingInfo.PredictStatus = predictStatus;
-                }
-                else
-                {
-                    monitorPingInfo.PredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
-                    monitorPingInfo.PredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;
-                    monitorPingInfo.PredictStatus.EventTime = predictStatus.EventTime;
-                    monitorPingInfo.PredictStatus.Message = predictStatus.Message;
-                }
-                await monitorContext.SaveChangesAsync();
-                /*// Assuming PredictStatus can directly store the DetectionResult objects
-                monitorPingInfo.PredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
-                monitorPingInfo.PredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;
-                monitorPingInfo.PredictStatus.EventTime = predictStatus.EventTime;
-                monitorPingInfo.PredictStatus.Message = predictStatus.Message;*/
-                // Save changes to the database
-                // Mark entity as modified if it's not tracking changes automatically
-                //monitorContext.Entry(monitorPingInfo).State = EntityState.Modified;
-
-                // Save changes to the database
-
-                result.Success = true;
-                result.Message = $" Success : MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID {dataSetID} updated with prediction results.";
-                _logger.LogDebug(result.Message);
-            }
-            catch (Exception ex)
+            if (monitorPingInfoID == 0)
             {
                 result.Success = false;
-                result.Message = $"Error : updating MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID {dataSetID} : {ex.Message}";
+                result.Message = $"MonitorPingInfo not found for MonitorIPID {monitorIPID}, DataSetID {dataSetID}";
                 _logger.LogError(result.Message);
+                return result;
             }
+
+            // Step 2: Get PredictStatus by FK (avoid Include)
+            var dbPredictStatus = await monitorContext.PredictStatuses
+                .FirstOrDefaultAsync(ps => ps.MonitorPingInfoID == monitorPingInfoID);
+
+            if (dbPredictStatus == null)
+            {
+                // Insert new
+                predictStatus.MonitorPingInfoID = monitorPingInfoID;
+                monitorContext.PredictStatuses.Add(predictStatus);
+            }
+            else
+            {
+                // Update existing (minimal fields only)
+                dbPredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
+                dbPredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;
+                dbPredictStatus.EventTime = predictStatus.EventTime;
+                dbPredictStatus.Message = predictStatus.Message;
+            }
+
+            await monitorContext.SaveChangesAsync();
+            UpdateCachedPredictStatus(monitorIPID, predictStatus);
+
+
+            result.Success = true;
+            result.Message = $"PredictStatus updated for MonitorIPID {monitorIPID}, DataSetID {dataSetID}";
+            _logger.LogDebug(result.Message);
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Message = $"Error updating PredictStatus: {ex.Message}";
+            _logger.LogError(result.Message);
         }
 
         return result;
@@ -379,81 +368,79 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
     public async Task SearchOrCreatePredictStatus(MonitorPingInfo monitorPingInfo)
     {
-        using (var scope = _scopeFactory.CreateScope())
-        {
-            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
-            int maxId = await monitorContext.MonitorPingInfos.Where(w => w.PredictStatus != null && w.MonitorIPID == monitorPingInfo.MonitorIPID).MaxAsync(m => m.ID);
-            var maxMonitorPingInfo = await monitorContext.MonitorPingInfos.AsNoTracking().Where(w => w.ID == maxId).FirstOrDefaultAsync();
-            if (maxMonitorPingInfo != null && maxMonitorPingInfo.PredictStatus != null)
-            {
-                maxMonitorPingInfo.PredictStatus.MonitorPingInfoID = 0;
-                maxMonitorPingInfo.PredictStatus.ID = 0;
-                monitorPingInfo.PredictStatus = maxMonitorPingInfo.PredictStatus;
-            }
-            else
-            {
-                monitorPingInfo.PredictStatus = new PredictStatus();
-            }
-        }
+        using var scope = _scopeFactory.CreateScope();
+        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+
+        var recentStatus = await monitorContext.MonitorPingInfos
+            .AsNoTracking()
+            .Where(mpi => mpi.MonitorIPID == monitorPingInfo.MonitorIPID && mpi.PredictStatus != null)
+            .OrderByDescending(mpi => mpi.ID)
+            .Select(mpi => mpi.PredictStatus)
+            .FirstOrDefaultAsync();
+
+        monitorPingInfo.PredictStatus = recentStatus != null
+            ? new PredictStatus(recentStatus) // Copy constructor clones values
+            : new PredictStatus();
     }
 
 
 
     public async Task<ResultObj> UpdatePredictStatusFlags(int monitorIPID, bool? alertFlag, bool? sentFlag)
     {
-        ResultObj result = new ResultObj();
+        ResultObj result = new();
 
-        using (var scope = _scopeFactory.CreateScope())
+        using var scope = _scopeFactory.CreateScope();
+        var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+
+        try
         {
-            var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+            var monitorPingInfoID = await monitorContext.MonitorPingInfos
+                .Where(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0)
+                .Select(mpi => mpi.ID)
+                .FirstOrDefaultAsync();
 
-            try
-            {
-                // Fetch the MonitorPingInfo object by ID
-                var monitorPingInfo = await monitorContext.MonitorPingInfos
-                    .Include(mpi => mpi.PredictStatus) // Include PredictStatus if it's a separate entity
-                    .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
-                var cachedMonitorPingInfo = _cachedMonitorPingInfos.FirstOrDefault(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
-
-                if (monitorPingInfo == null)
-                {
-                    result.Success = false;
-                    result.Message = $" Error : DB MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID 0 not found.";
-                    _logger.LogError(result.Message);
-                    return result;
-                }
-                if (cachedMonitorPingInfo == null)
-                {
-                    result.Success = false;
-                    result.Message = $" Error : Cached MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID 0 not found.";
-                    _logger.LogError(result.Message);
-                    return result;
-                }
-                //var flag = false;
-                // Update the MonitorPingInfo object with the prediction results
-                if (monitorPingInfo.PredictStatus != null)
-                {
-                    if (alertFlag != null) monitorPingInfo.PredictStatus.AlertFlag = (bool)alertFlag;
-                    if (sentFlag != null) monitorPingInfo.PredictStatus.AlertSent = (bool)sentFlag;
-                }
-                if (cachedMonitorPingInfo.PredictStatus != null)
-                {
-                    if (alertFlag != null) cachedMonitorPingInfo.PredictStatus.AlertFlag = (bool)alertFlag;
-                    if (sentFlag != null) cachedMonitorPingInfo.PredictStatus.AlertSent = (bool)sentFlag;
-                }
-                await monitorContext.SaveChangesAsync();
-
-
-                result.Success = true;
-                result.Message = $" Success : Set Predict Flags for MonitorIPID {monitorIPID} and DataSetID 0.";
-                _logger.LogDebug(result.Message);
-            }
-            catch (Exception ex)
+            if (monitorPingInfoID == 0)
             {
                 result.Success = false;
-                result.Message = $"Error : setting Predict Flags for MonitorIPID {monitorIPID} and DataSetID 0 : {ex.Message}";
+                result.Message = $"DB MonitorPingInfo with MonitorIPID {monitorIPID} and DataSetID 0 not found.";
                 _logger.LogError(result.Message);
+                return result;
             }
+
+            var predictStatus = await monitorContext.PredictStatuses
+                .FirstOrDefaultAsync(p => p.MonitorPingInfoID == monitorPingInfoID);
+
+            if (predictStatus == null)
+            {
+                result.Success = false;
+                result.Message = $"PredictStatus not found for MonitorPingInfoID {monitorPingInfoID}.";
+                _logger.LogError(result.Message);
+                return result;
+            }
+
+            if (alertFlag != null) predictStatus.AlertFlag = alertFlag.Value;
+            if (sentFlag != null) predictStatus.AlertSent = sentFlag.Value;
+
+            // Also update in cache if available
+            var cachedMonitorPingInfo = _cachedMonitorPingInfos
+                .FirstOrDefault(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
+            if (cachedMonitorPingInfo?.PredictStatus != null)
+            {
+                if (alertFlag != null) cachedMonitorPingInfo.PredictStatus.AlertFlag = alertFlag.Value;
+                if (sentFlag != null) cachedMonitorPingInfo.PredictStatus.AlertSent = sentFlag.Value;
+            }
+
+            await monitorContext.SaveChangesAsync();
+
+            result.Success = true;
+            result.Message = $"Success: Set Predict Flags for MonitorIPID {monitorIPID} and DataSetID 0.";
+            _logger.LogDebug(result.Message);
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.Message = $"Error setting Predict Flags: {ex.Message}";
+            _logger.LogError(result.Message);
         }
 
         return result;
