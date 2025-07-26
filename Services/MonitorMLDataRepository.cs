@@ -223,16 +223,16 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
 
 
-private void UpdateCachedPredictStatus(int monitorIPID, PredictStatus updated)
-{
-    var cached = _cachedMonitorPingInfos
-        .FirstOrDefault(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
-
-    if (cached != null)
+    private void UpdateCachedPredictStatus(int monitorIPID, PredictStatus updated)
     {
-        cached.PredictStatus = updated;
+        var cached = _cachedMonitorPingInfos
+            .FirstOrDefault(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
+
+        if (cached != null)
+        {
+            cached.PredictStatus = updated;
+        }
     }
-}
 
     public ResultObj UpdateMonitorPingInfo(MonitorPingInfo updatedMonitorPingInfo)
     {
@@ -335,9 +335,10 @@ private void UpdateCachedPredictStatus(int monitorIPID, PredictStatus updated)
 
             if (dbPredictStatus == null)
             {
-                // Insert new
-                predictStatus.MonitorPingInfoID = monitorPingInfoID;
-                monitorContext.PredictStatuses.Add(predictStatus);
+                // Create a fresh instance to guarantee a new auto-increment PK.
+                var ps = new PredictStatus(predictStatus, zeroIds: true);
+                ps.MonitorPingInfoID=monitorPingInfoID;
+                monitorContext.PredictStatuses.Add(ps);
             }
             else
             {
