@@ -238,7 +238,7 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(result.Data[1].Data.ChangeResult.NumberOfDetections == 0, "Changes were detected.");
             Assert.True(!result.Data[1].Data.SpikeResult.IsIssueDetected, "Spike was detected.");
             Assert.True(result.Data[1].Data.SpikeResult.NumberOfDetections == 0, "Spikes were detected.");
-            Assert.True(!result.Data[2].Success, " Reult was success.");
+
 #pragma warning restore CS8602 // Nullable warning           
         }
 

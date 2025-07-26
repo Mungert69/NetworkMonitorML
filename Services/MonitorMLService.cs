@@ -139,6 +139,7 @@ public class MonitorMLService : IMonitorMLService
     {
         TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>> result = new TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>();
         result.Message = " SERVICE : CheckLatestHosts : ";
+        result.Success = true;
         try
         {
             // Assuming there's a method to get the latest MonitorPingInfos with a specified window size
@@ -170,7 +171,7 @@ public class MonitorMLService : IMonitorMLService
                 resultPublish.Success = false;
                 resultPublish.Message = " Error : missing system paramters SerivceID and or ServiceAuthKey.";
             }
-            result.Success = resultPublish.Success && results.Any(r => !r.Success);
+            result.Success = resultPublish.Success && results.Any(r => r.Success);
             result.Message += resultPublish.Message;
             result.Data = results;
         }
@@ -188,6 +189,7 @@ public class MonitorMLService : IMonitorMLService
         var result = new TResultObj<(DetectionResult changeDetectionResult, DetectionResult spikeDetectionResult)>();
         if (monitorPingInfo != null)
         {
+            result.Success = true;
             int monitorIPID = monitorPingInfo.MonitorIPID;
             int dataSetID = monitorPingInfo.DataSetID;
             var changeDetectionResult = await InitChangeDetection(monitorPingInfo);
@@ -232,6 +234,7 @@ public class MonitorMLService : IMonitorMLService
                     result.Success = false;
                     result.Message += $" Error : could not update Prediction results in database for MonitorPingInfo.MonitorIPID {monitorPingInfo.MonitorIPID} DataSetID {monitorPingInfo.DataSetID} . Error was : {e.Message}";
                 }
+
             }
             else
             {

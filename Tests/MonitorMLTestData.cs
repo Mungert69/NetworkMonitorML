@@ -41,7 +41,9 @@ public class MonitorMLTestData
         {
             MonitorIPID = monitorIPID,
             DataSetID = dataSetID,
-            PingInfos = pingInfos
+            PingInfos = pingInfos,
+            Enabled = true,
+            PredictStatus = new PredictStatus()
         };
 
         return mockMonitorPingInfo;
@@ -72,7 +74,9 @@ public class MonitorMLTestData
         {
             MonitorIPID = monitorIPID,
             DataSetID = dataSetID,
-            PingInfos = pingInfos
+            PingInfos = pingInfos,
+            Enabled = true,
+            PredictStatus = new PredictStatus()
         };
     }
     public static MonitorPingInfo GenerateDataWithSpikeAndChange(int monitorIPID, int dataSetID)
@@ -111,7 +115,9 @@ public class MonitorMLTestData
         {
             MonitorIPID = monitorIPID,
             DataSetID = dataSetID,
-            PingInfos = pingInfos
+            PingInfos = pingInfos,
+            Enabled = true,
+            PredictStatus = new PredictStatus()
         };
     }
     public static MonitorPingInfo GenerateDataWithNoDetection(int monitorIPID, int dataSetID)
@@ -138,7 +144,9 @@ public class MonitorMLTestData
         {
             MonitorIPID = monitorIPID,
             DataSetID = dataSetID,
-            PingInfos = pingInfos
+            PingInfos = pingInfos,
+            Enabled = true,
+            PredictStatus = new PredictStatus(),
         };
     }
 
