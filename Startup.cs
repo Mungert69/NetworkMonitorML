@@ -64,7 +64,9 @@ namespace NetworkMonitor.ML
                      }
             ));
 
-            services.AddSingleton<IMLModelFactory, MLModelFactory>();
+            //services.AddSingleton<IMLModelFactory, MLModelFactory>();
+            services.AddSingleton<IMLModelFactory, TimesFmModelFactory>();
+
             services.AddSingleton<IMonitorMLDataRepo, MonitorMLDataRepo>();
             services.AddSingleton<IMonitorMLService, MonitorMLService>();
             services.AddSingleton<IRabbitListener, RabbitListener>();
@@ -83,7 +85,7 @@ namespace NetworkMonitor.ML
                return systemParamsHelper.GetSystemParams();
            });
             services.AddSingleton(_cancellationTokenSource);
-            services.Configure<HostOptions>(s => s.ShutdownTimeout = TimeSpan.FromMinutes(5));
+            services.Configure<HostOptions>(s => s.ShutdownTimeout = TimeSpan.FromSeconds(20));
             services.AddAsyncServiceInitialization()
              .AddInitAction<IRabbitRepo>(async (rabbitRepo) =>
                     {
