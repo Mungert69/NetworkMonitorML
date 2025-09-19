@@ -114,10 +114,12 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
         if (additionalPingInfosNeeded > 0)
         {
-            // Determine the previous DataSetID
             int previousDataSetID = dataSetID == 0
-                ? await monitorContext.MonitorPingInfos.AsNoTracking().MaxAsync(mpi => mpi.DataSetID)
+                ? await monitorContext.MonitorPingInfos.AsNoTracking()
+                .Where(mpi => mpi.MonitorIPID == monitorIPID)
+                .MaxAsync(mpi => mpi.DataSetID)
                 : dataSetID - 1;
+
 
             // Retrieve additional PingInfos from the previous dataset if available
             var additionalPingInfos = await monitorContext.MonitorPingInfos
@@ -337,7 +339,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             {
                 // Create a fresh instance to guarantee a new auto-increment PK.
                 var ps = new PredictStatus(predictStatus, zeroIds: true);
-                ps.MonitorPingInfoID=monitorPingInfoID;
+                ps.MonitorPingInfoID = monitorPingInfoID;
                 monitorContext.PredictStatuses.Add(ps);
             }
             else
