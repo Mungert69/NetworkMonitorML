@@ -37,11 +37,11 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
     // Rolling calibration (lets sigma follow regime shifts)
     private const int ROLL_SIGMA_WIN = 60;    // samples to compute rolling sigma
-    private const int BASELINE_WIN = 120;   // samples for rolling baseline (median/MAD)
+    private const int BASELINE_WIN   = 120;   // samples for rolling baseline (median/MAD)
 
     // Post-alert behavior
-    private const int SIGMA_COOLDOWN = 30;   // freeze sigma for N samples after CHANGE
-    private const double MIN_REL_SHIFT = 0.20; // require ≥20% shift vs baseline to call CHANGE
+    private const int    SIGMA_COOLDOWN  = 30;   // freeze sigma for N samples after CHANGE
+    private const double MIN_REL_SHIFT   = 0.20; // require ≥20% shift vs baseline to call CHANGE
 
     // Logging
     private const int SAMPLE_ROWS = 6;          // first 4 + last 2 rows logged
@@ -54,7 +54,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
     // ---- Martingale evidence accumulator (legacy parity in slot [3]) ----
     private double _martingale = 1.0;
-    private const double MART_EPS = 0.92;    // 0<eps<1; smaller => stronger boost
+    private const double MART_EPS   = 0.99;    // gentler power-martingale (near-neutral on calm)
     private const double MART_CLAMP = 1e6;     // safety bound
     private double _maxMartingaleThisBatch = 1.0;
 
@@ -88,15 +88,16 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         var rtts = inputs.Select(x => (double)x.RoundTripTime).ToArray();
         var n = rtts.Length;
 
+        // Reset martingale per evaluation window for sane, comparable telemetry
+        _martingale = 1.0;
+        _maxMartingaleThisBatch = 1.0;
+
         var preds = new List<AnomalyPrediction>(n);
         for (int i = 0; i < Math.Min(PreTrain, n); i++)
             preds.Add(new AnomalyPrediction { Prediction = new double[] { 0, 0, 0.5, 1.0 } });
 
         if (n <= PreTrain)
             return preds;
-
-        // Reset per-batch martingale max
-        _maxMartingaleThisBatch = Math.Max(_maxMartingaleThisBatch, _martingale);
 
         // Rolling prefixes: horizon=1
         var batchSeries = new List<List<double>>(n - PreTrain);
@@ -239,8 +240,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             double relShift = Math.Abs(yhat - baselineMed) / Math.Max(1.0, Math.Abs(baselineMed));
             bool bigShift = relShift >= MIN_REL_SHIFT;
 
-            bool martingaleHit = _martingale >= 150.0; // start here; tune later
-            bool changeFlag = persistenceHit && (bigShift || martingaleHit);
+            bool changeFlag = persistenceHit && bigShift;
 
             // cooldown kicks in on the first confirmed change
             if (changeFlag && _cooldown == 0)
@@ -254,12 +254,17 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                 ? Math.Max(1e-6, baseTail * Math.Pow(0.5, Math.Max(0, runLen - RUN_LEN + 1)))
                 : (outside ? baseTail : 0.5);
 
-            // p for *martingale*: reflect surprise of this single point only
-            double pMart = outside ? baseTail : 0.5;
-            double evid = (pMart <= 0.5) ? (1.0 - pMart) : pMart; // map to [0.5,1]
-            evid = Math.Min(Math.Max(evid, 1e-6), 1.0 - 1e-6);
+            // p for *martingale*: map distance-to-band-edge to a z-like value, then p=exp(-z)
+            // normalize distance to band side so |pos|=1 at the band edge, >1 outside
+            double sideDenom = (y >= yhat)
+                ? Math.Max(1e-9, hi - yhat)
+                : Math.Max(1e-9, yhat - lo);
+            double pos = Math.Abs(y - yhat) / sideDenom; // 0 at mean, 1 at edge
+            double z = pos * 1.2816;                     // scale so edge ≈ "1σ" (q10..q90 ~ ±1.2816σ)
+            double pMart = Math.Exp(-z);
+            pMart = Math.Min(Math.Max(pMart, 1e-6), 1.0 - 1e-6);
 
-            _martingale *= (MART_EPS * Math.Pow(evid, MART_EPS - 1.0));
+            _martingale *= (MART_EPS * Math.Pow(pMart, MART_EPS - 1.0));
             if (_martingale > MART_CLAMP) _martingale = MART_CLAMP;
             if (_martingale > _maxMartingaleThisBatch) _maxMartingaleThisBatch = _martingale;
 
@@ -335,9 +340,10 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         if (_log.IsEnabled(LogLevel.Information))
         {
             int B = n - PreTrain;
+            var qpair = PickQuantileIndices(Confidence);
             _log.LogInformation(
                 "timesfm summary monitor={Monitor} B={B} conf={Conf:0.##} band={Lo}%..{Hi}% outside={Outside} flagged={Flagged} near={Near} maxResid={Max:0.###} minMargin={Min:0.###} coolDown={Cooldown} maxM={MaxM:0.###}",
-                _monitorPingInfoID, B, Confidence, loIdx * 10, hiIdx * 10,
+                _monitorPingInfoID, B, Confidence, qpair.loIdx * 10, qpair.hiIdx * 10,
                 outsideCnt, flaggedCnt, near, maxResid, double.IsInfinity(minMargin) ? double.NaN : minMargin, _cooldown, _maxMartingaleThisBatch
             );
             foreach (var line in samples)
