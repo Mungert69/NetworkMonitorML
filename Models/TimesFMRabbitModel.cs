@@ -46,100 +46,165 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
     public AnomalyPrediction Predict(LocalPingInfo input)
         => PredictList(new List<LocalPingInfo> { input }).First();
 
-    public IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs)
-    {
-        if (inputs == null || inputs.Count == 0)
-            return Array.Empty<AnomalyPrediction>();
+   public IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs)
+{
+    if (inputs == null || inputs.Count == 0)
+        return Array.Empty<AnomalyPrediction>();
 
-        var rtts = inputs.Select(x => (double)x.RoundTripTime).ToArray();
-        var n = rtts.Length;
+    // --- knobs ---
+    const int SAMPLE_ROWS = 6;          // first 4 + last 2 rows logged
+    const double NEAR_MISS_FRAC = 0.10; // within 10% of band edge
+    const bool LOG_JSON = true;         // structured JSON line per near-miss/outside
 
-        var preds = new List<AnomalyPrediction>(n);
-        for (int i = 0; i < Math.Min(PreTrain, n); i++)
-            preds.Add(new AnomalyPrediction { Prediction = new double[] { 0, 0, 0.5, 0 } });
+    var rtts = inputs.Select(x => (double)x.RoundTripTime).ToArray();
+    var n = rtts.Length;
 
-        if (n <= PreTrain)
-            return preds;
+    var preds = new List<AnomalyPrediction>(n);
+    for (int i = 0; i < Math.Min(PreTrain, n); i++)
+        preds.Add(new AnomalyPrediction { Prediction = new double[] { 0, 0, 0.5, 0 } });
 
-        // rolling prefixes: horizon=1
-        var batchSeries = new List<List<double>>(n - PreTrain);
-        for (int i = PreTrain; i < n; i++)
-            batchSeries.Add(rtts.Take(i).ToList());
-
-        var payloadJson = JsonSerializer.Serialize(new
-        {
-            model = "google/timesfm-2.5-200m-pytorch",
-            messages = new object[]
-            {
-                new { role = "system", content = "You are a time-series forecaster." },
-                new
-                {
-                    role = "user",
-                    content = JsonSerializer.Serialize(new
-                    {
-                        series = batchSeries,
-                        horizon = 1,
-                        quantiles = true,
-                        max_context = 4096
-                    })
-                }
-            }
-        });
-
-        var content = ReadSingleAssistantContentAsync(payloadJson).GetAwaiter().GetResult();
-        var resp = JsonSerializer.Deserialize<TimesFmResponse>(content)
-                   ?? throw new InvalidOperationException("TimesFM: null response");
-
-        // Robust normalization
-        var f = NormalizeForecast(resp);         // double[] length >=1 or B
-        var q = NormalizeQuantiles(resp);        // double?[][] or null
-
-        int B = batchSeries.Count;
-
-        double ForecastAt(int j)
-        {
-            if (f.Length == 0) return double.NaN;
-            if (j < f.Length) return f[j];
-            if (f.Length == 1) return f[0];      // broadcast single forecast
-            return f[^1];                        // fallback to last
-        }
-
-        double?[]? QuantRowAt(int j)
-        {
-            if (q == null || q.Length == 0) return null;
-            if (j < q.Length) return q[j];
-            if (q.Length == 1) return q[0];      // broadcast single row
-            return null;
-        }
-
-        var (loIdx, hiIdx) = PickQuantileIndices(Confidence);
-
-        for (int i = PreTrain; i < n; i++)
-        {
-            var j = i - PreTrain;
-            var y = rtts[i];
-            var yhat = ForecastAt(j);
-
-            double lo = double.NegativeInfinity, hi = double.PositiveInfinity;
-            var row = QuantRowAt(j);
-            if (row != null && row.Length >= 10)
-            {
-                lo = (loIdx < row.Length && row[loIdx].HasValue) ? row[loIdx]!.Value : double.NegativeInfinity;
-                hi = (hiIdx < row.Length && row[hiIdx].HasValue) ? row[hiIdx]!.Value : double.PositiveInfinity;
-            }
-
-            var score = Math.Abs(y - yhat);
-            var outside = (y < lo) || (y > hi);
-            var p = outside ? TailP(loIdx, hiIdx) : 0.5;
-
-            preds.Add(new AnomalyPrediction
-            {
-                Prediction = new[] { outside ? 1d : 0d, score, p, 0d }
-            });
-        }
-
+    if (n <= PreTrain)
         return preds;
+
+    // rolling prefixes: horizon=1
+    var batchSeries = new List<List<double>>(n - PreTrain);
+    for (int i = PreTrain; i < n; i++)
+        batchSeries.Add(rtts.Take(i).ToList());
+
+    var payloadJson = JsonSerializer.Serialize(new
+    {
+        model = "google/timesfm-2.5-200m-pytorch",
+        messages = new object[]
+        {
+            new { role = "system", content = "You are a time-series forecaster." },
+            new
+            {
+                role = "user",
+                content = JsonSerializer.Serialize(new
+                {
+                    series = batchSeries,
+                    horizon = 1,
+                    quantiles = true,
+                    max_context = 4096
+                })
+            }
+        }
+    });
+
+    var content = ReadSingleAssistantContentAsync(payloadJson).GetAwaiter().GetResult();
+    var resp = JsonSerializer.Deserialize<TimesFmResponse>(content)
+               ?? throw new InvalidOperationException("TimesFM: null response");
+
+    var f = NormalizeForecast(resp);          // double[] length >=1 or B
+    var q = NormalizeQuantiles(resp);         // double?[][] or null
+
+    double ForecastAt(int j)
+    {
+        if (f.Length == 0) return double.NaN;
+        if (j < f.Length) return f[j];
+        if (f.Length == 1) return f[0];
+        return f[^1];
     }
+    double?[]? QuantRowAt(int j)
+    {
+        if (q == null || q.Length == 0) return null;
+        if (j < q.Length) return q[j];
+        if (q.Length == 1) return q[0];
+        return null;
+    }
+
+    var (loIdx, hiIdx) = PickQuantileIndices(Confidence);
+
+    int near = 0, outsideCnt = 0;
+    double maxResid = 0, minMargin = double.PositiveInfinity;
+    var samples = new List<string>(SAMPLE_ROWS);
+
+    for (int i = PreTrain; i < n; i++)
+    {
+        var j = i - PreTrain;
+        var y = rtts[i];
+        var yhat = ForecastAt(j);
+
+        double lo = double.NegativeInfinity, hi = double.PositiveInfinity;
+        var row = QuantRowAt(j);
+        if (row != null && row.Length >= 10)
+        {
+            lo = (loIdx < row.Length && row[loIdx].HasValue) ? row[loIdx]!.Value : double.NegativeInfinity;
+            hi = (hiIdx < row.Length && row[hiIdx].HasValue) ? row[hiIdx]!.Value : double.PositiveInfinity;
+        }
+
+        var score = Math.Abs(y - yhat);
+        var outside = (y < lo) || (y > hi);
+        var p = outside ? TailP(loIdx, hiIdx) : 0.5;
+
+        // diagnostics
+        double bandW = (double.IsFinite(lo) && double.IsFinite(hi)) ? (hi - lo) : double.NaN;
+        double margin = double.IsFinite(bandW)
+            ? (y < lo ? (y - lo) : (y > hi ? (hi - y) : Math.Min(y - lo, hi - y)))
+            : double.NaN;
+        double fracToEdge = (double.IsFinite(bandW) && bandW > 0 && double.IsFinite(margin))
+            ? Math.Max(0, margin) / bandW
+            : double.NaN;
+
+        maxResid = Math.Max(maxResid, score);
+        if (double.IsFinite(margin)) minMargin = Math.Min(minMargin, margin);
+        if (outside) outsideCnt++;
+        else if (double.IsFinite(fracToEdge) && fracToEdge <= NEAR_MISS_FRAC) near++;
+
+        // sample: first 4 and last 2 rows
+        if (samples.Count < 4 || j >= (n - PreTrain) - 2)
+        {
+            if (LOG_JSON)
+            {
+                var obj = new
+                {
+                    model = "timesfm",
+                    monitor = _monitorPingInfoID,
+                    j,
+                    y,
+                    yhat,
+                    lo = double.IsFinite(lo) ? lo : (double?)null,
+                    hi = double.IsFinite(hi) ? hi : (double?)null,
+                    resid = score,
+                    margin = double.IsFinite(margin) ? margin : (double?)null,
+                    width = double.IsFinite(bandW) ? bandW : (double?)null,
+                    frac = double.IsFinite(fracToEdge) ? fracToEdge : (double?)null,
+                    flag = outside ? "OUT" : (double.IsFinite(fracToEdge) && fracToEdge <= NEAR_MISS_FRAC ? "NEAR" : "OK")
+                };
+                samples.Add(JsonSerializer.Serialize(obj));
+            }
+            else
+            {
+                samples.Add(
+                    $"#{j} y={y:0.###} ŷ={yhat:0.###} lo={(double.IsFinite(lo)?lo:double.NaN):0.###} hi={(double.IsFinite(hi)?hi:double.NaN):0.###} " +
+                    $"resid={score:0.###} margin={(double.IsFinite(margin)?margin:double.NaN):0.###} width={(double.IsFinite(bandW)?bandW:double.NaN):0.###} " +
+                    $"{(outside ? "OUT" : (double.IsFinite(fracToEdge) && fracToEdge <= NEAR_MISS_FRAC ? "NEAR" : "OK"))}"
+                );
+            }
+        }
+
+        preds.Add(new AnomalyPrediction
+        {
+            Prediction = new[] { outside ? 1d : 0d, score, p, 0d }
+        });
+    }
+
+    // single-line summary
+    if (_log.IsEnabled(LogLevel.Information))
+    {
+        int B = n - PreTrain;
+        _log.LogInformation(
+            "timesfm summary monitor={Monitor} B={B} conf={Conf:0.##} band={LoPct}%..{HiPct}% outside={Outside} near={Near} maxResid={Max:0.###} minMargin={Min:0.###}",
+            _monitorPingInfoID, B, Confidence, loIdx * 10, hiIdx * 10, outsideCnt, near,
+            maxResid, double.IsInfinity(minMargin) ? double.NaN : minMargin
+        );
+        // sample lines
+        foreach (var line in samples)
+            _log.LogInformation("timesfm sample {Line}", line);
+    }
+
+    return preds;
+}
 
     public void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
     {
