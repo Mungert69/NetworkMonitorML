@@ -68,7 +68,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
         var payloadJson = JsonSerializer.Serialize(new
         {
-            model = "timesfm-2.5",
+            model = "google/timesfm-2.5-200m-pytorch",
             messages = new object[]
             {
                 new { role = "system", content = "You are a time-series forecaster." },
