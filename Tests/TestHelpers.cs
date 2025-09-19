@@ -6,42 +6,44 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 
-using NetworkMonitor.Objects;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using System.Linq;
-using System.Security.Principal;
-using System.Runtime.InteropServices;
-using System.Net.Http;
-using RestSharp;
-using NetworkMonitor.Utils.Helpers;
-using NetworkMonitor.Objects.Factory;
-using NetworkMonitor.Objects.Repository;   // RabbitRepo, IRabbitRepo
-using DotNetEnv;
 
-using RabbitMQ.Client; // IConnection, IChannel, ConnectionFactory, ExchangeType
+using NetworkMonitor.Objects;
+using NetworkMonitor.Objects.Factory;
+using NetworkMonitor.Objects.Repository;   // IRabbitRepo, RabbitRepo
+using NetworkMonitor.Utils.Helpers;        // SystemParamsHelper
+
+using RabbitMQ.Client;                     // IConnection, IChannel, ConnectionFactory, ExchangeType
 
 namespace NetworkMonitorML.IntegrationTests
 {
     public static class TestHelpers
     {
-        private static IConfiguration BuildConfig() =>
-            new ConfigurationBuilder()
+        private static IConfiguration BuildConfig()
+        {
+            // Critical: load .env into process env for dotnet test before any reads
+            EnvBootstrapper.EnsureLoaded();
+
+            return new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
-                 .AddEnvironmentVariables()
+                .AddEnvironmentVariables()
                 .Build();
+        }
 
         private static ISystemParamsHelper BuildParamsHelper()
         {
             var cfg = BuildConfig();
             using var lf = LoggerFactory.Create(_ => { });
             ILogger<SystemParamsHelper> logger = lf.CreateLogger<SystemParamsHelper>();
+            // SystemParamsHelper itself reads config and will see env already loaded
             return new SystemParamsHelper(cfg, logger);
         }
 
-        public static SystemUrl LocalRabbitUrl() => BuildParamsHelper().GetSystemParams().ThisSystemUrl;
+        public static SystemUrl LocalRabbitUrl()
+            => BuildParamsHelper().GetSystemParams().ThisSystemUrl;
 
         public static IRabbitRepo MakeRabbitRepo(SystemUrl sys)
         {
