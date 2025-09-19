@@ -52,9 +52,10 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
     private int _cooldown = 0;
     private double _lastSigma = 1.0;
 
-    // ---- Martingale evidence accumulator (legacy parity in slot [3]) ----
+    // ---- Martingale evidence accumulator (slot [3]) ----
+    // Telemetry style: nearly neutral on calm points; climbs near/over band edges.
     private double _martingale = 1.0;
-    private const double MART_EPS   = 0.99;    // gentler power-martingale (near-neutral on calm)
+    private const double MART_EPS   = 0.997;   // gentler power-martingale (flatter in calm)
     private const double MART_CLAMP = 1e6;     // safety bound
     private double _maxMartingaleThisBatch = 1.0;
 
@@ -254,13 +255,21 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                 ? Math.Max(1e-6, baseTail * Math.Pow(0.5, Math.Max(0, runLen - RUN_LEN + 1)))
                 : (outside ? baseTail : 0.5);
 
-            // p for *martingale*: map distance-to-band-edge to a z-like value, then p=exp(-z)
-            // normalize distance to band side so |pos|=1 at the band edge, >1 outside
+            // p for *martingale*: dead-zone inside the band for flatter calm behavior.
+            // sideDenom = distance from mean to the nearer band edge on the side of y.
             double sideDenom = (y >= yhat)
                 ? Math.Max(1e-9, hi - yhat)
                 : Math.Max(1e-9, yhat - lo);
-            double pos = Math.Abs(y - yhat) / sideDenom; // 0 at mean, 1 at edge
-            double z = pos * 1.2816;                     // scale so edge ≈ "1σ" (q10..q90 ~ ±1.2816σ)
+
+            // pos: 0 at mean, 1 at the band edge on that side
+            double pos = Math.Abs(y - yhat) / sideDenom;
+
+            // Dead-zone: ignore inner 25% of the band (no evidence update there).
+            // Re-scale the remainder so the band edge is still ≈ "1σ" (1.2816).
+            double posEff = Math.Max(0.0, pos - 0.25);         // [0, 0.75+] after dead-zone
+            double z = (posEff <= 0.0) ? 0.0 : (posEff * 1.2816 / 0.75);
+
+            // Map to “p”: simple exponential tail surrogate (no Phi needed).
             double pMart = Math.Exp(-z);
             pMart = Math.Min(Math.Max(pMart, 1e-6), 1.0 - 1e-6);
 
@@ -332,7 +341,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                 // alert -> persistence & %-shift
                 // score -> normalized residual (unitless)
                 // p -> detection-side p (with persistence shaping)
-                // martingale -> cumulative evidence (legacy parity)
+                // martingale -> cumulative evidence (telemetry)
                 Prediction = new[] { changeFlag ? 1d : 0d, normResid, pOut, _martingale }
             });
         }
