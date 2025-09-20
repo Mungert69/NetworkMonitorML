@@ -71,7 +71,12 @@ namespace NetworkMonitor.ML
             services.AddSingleton<IMonitorMLService, MonitorMLService>();
             services.AddSingleton<IRabbitListener, RabbitListener>();
             services.AddSingleton<IRabbitRepo, RabbitRepo>();
-            services.AddSingleton<IFileRepo, FileRepo>();
+            services.AddSingleton<IFileRepo, FileRepo>(
+                 provider =>
+                 {
+                     return new FileRepo(false, "./state");
+                 }
+             );
             services.AddSingleton<ISystemParamsHelper, SystemParamsHelper>();
 
             services.AddSingleton<MLParams>(sp =>
