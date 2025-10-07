@@ -1,0 +1,19 @@
+[Unit]
+Description=Predict Alert Simulator HTTP service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=predictsim
+Group=predictsim
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=-/etc/default/predict-alert-simulator
+Environment="PATH=__INSTALL_DIR__/.venv/bin"
+ExecStart=__INSTALL_DIR__/.venv/bin/python __INSTALL_DIR__/predict_alert_simulator.py $SIMULATOR_OPTS
+Restart=on-failure
+RestartSec=5
+RuntimeDirectory=predict-alert-simulator
+
+[Install]
+WantedBy=multi-user.target

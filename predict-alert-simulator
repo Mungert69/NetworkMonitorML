@@ -1,0 +1,4 @@
+# Options passed to predict_alert_simulator.py
+# Example: SIMULATOR_OPTS="--port 8080 --mode spike --spike-interval 5"
+# this file is created in /etc/default/ edit it after its creation
+SIMULATOR_OPTS="--port 8080 --mode normal"

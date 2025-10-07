@@ -353,3 +353,7 @@ nohup.out
 /data/*
 /.mono
 .env
+# Local Python virtualenvs
+venv/
+.venv/
+
