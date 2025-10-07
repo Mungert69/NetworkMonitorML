@@ -227,6 +227,16 @@ app.state.simulator = LatencySimulator(
 app.state.control_token: Optional[str] = None
 
 
+def _enforce_token(request: Request, provided_token: Optional[str]) -> None:
+    """Validate control token if one is configured."""
+    token_required: Optional[str] = request.app.state.control_token
+    if token_required is not None and provided_token != token_required:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid control token.",
+        )
+
+
 @app.get("/healthz", tags=["meta"])
 async def healthcheck() -> dict:
     """Lightweight endpoint with no induced delay."""
@@ -271,17 +281,28 @@ async def get_config(request: Request) -> dict:
     return snapshot
 
 
+@app.get("/mode", tags=["control"])
+async def get_or_set_mode(
+    request: Request,
+    mode: Optional[Mode] = None,
+    token: Optional[str] = None,
+) -> dict:
+    """Query or switch the simulator mode via query parameters."""
+    simulator: LatencySimulator = request.app.state.simulator
+    if mode is None:
+        return await simulator.snapshot()
+
+    _enforce_token(request, token)
+    await simulator.update(mode=mode)
+    snapshot = await simulator.snapshot()
+    logger.info("mode changed via query to %s", snapshot["mode"])
+    return snapshot
+
+
 @app.post("/mode", tags=["control"])
 async def update_mode(request: Request, update_request: ModeUpdateRequest) -> dict:
     """Adjust the simulator mode or latency characteristics."""
-    token_required: Optional[str] = request.app.state.control_token
-    if token_required is not None:
-        if update_request.token != token_required:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid control token.",
-            )
-
+    _enforce_token(request, update_request.token)
     simulator: LatencySimulator = request.app.state.simulator
     await simulator.update(
         mode=update_request.mode,

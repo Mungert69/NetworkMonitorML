@@ -4,6 +4,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# Override runtime options via /etc/default/predict-alert-simulator (SIMULATOR_OPTS).
 Type=simple
 User=predictsim
 Group=predictsim

@@ -68,8 +68,11 @@ chmod 644 "${SERVICE_DEST}"
 
 if [[ ! -f "${ENV_FILE}" ]]; then
   cat <<'EOF' > "${ENV_FILE}"
-# This file is created in /etc/default/. Edit it aftet install. It contains options passed to predict_alert_simulator.py
-# Example: SIMULATOR_OPTS="--port 8080 --mode spike --spike-interval 5"
+# Options passed to predict_alert_simulator.py (edit after install).
+# Examples:
+#   SIMULATOR_OPTS="--port 8080 --mode spike --spike-interval 5"
+#   SIMULATOR_OPTS="--port 8080 --mode slow --token changeme"
+# If a --token is provided, include ?token=VALUE when calling /mode endpoints.
 SIMULATOR_OPTS="--port 8080 --mode normal"
 EOF
 fi
@@ -92,5 +95,13 @@ To start the simulator:
 
 To change launch options edit ${ENV_FILE} and restart:
   systemctl restart predict-alert-simulator.service
+
+Control endpoints:
+  GET  /mode            (optionally ?mode=slow&token=VALUE)
+  POST /mode            (JSON body, include token field when required)
+
+Example /etc/default/predict-alert-simulator:
+  SIMULATOR_OPTS="--port 8080 --mode spike --spike-interval 5 --token my-secret-token"
+  # use ?token=my-secret-token with the control endpoints above
 
 EOF
