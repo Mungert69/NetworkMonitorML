@@ -447,7 +447,13 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                 return el.EnumerateArray().Select(e => e.GetDouble()).ToArray();
             }
         }
-        throw new InvalidOperationException("TimesFM: unknown forecast shape");
+
+        if (r.Forecast is JsonElement rawEl)
+        {
+            throw new InvalidOperationException($"TimesFM: unknown forecast shape {rawEl.ValueKind}: {rawEl.GetRawText()}");
+        }
+
+        throw new InvalidOperationException($"TimesFM: unknown forecast shape type={r.Forecast?.GetType().Name ?? "null"}");
     }
 
     // Accepts [10], [[10]], or BxHx10 (take H=1). Returns per-batch row or null.
