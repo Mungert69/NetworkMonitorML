@@ -105,6 +105,13 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         for (int i = PreTrain; i < n; i++)
             batchSeries.Add(rtts.Take(i).ToList());
 
+        _log.LogDebug(
+            "[TimesFM] Monitor {MonitorId} sending {SeriesCount} prefixes (last len {LastLen}) via routing key '{RoutingKey}'",
+            _monitorPingInfoID,
+            batchSeries.Count,
+            batchSeries.Count > 0 ? batchSeries[^1].Count : 0,
+            _routingKey);
+
         var payloadJson = JsonSerializer.Serialize(new
         {
             model = "google/timesfm-2.5-200m-pytorch",
@@ -384,6 +391,8 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         var requestObj = JsonSerializer.Deserialize<object>(openAiChatRequestJson)!;
 
         var sb = new StringBuilder();
+        _log.LogDebug("[TimesFM] Monitor {MonitorId} streaming request...", _monitorPingInfoID);
+
         await foreach (var chunkJson in _tx.CreateChatCompletionStreamAsync(requestObj, ct))
         {
             if (chunkJson == "__STREAM_END__") break;
@@ -405,6 +414,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                 _log.LogWarning(ex, "Chunk parse failed");
             }
         }
+        _log.LogDebug("[TimesFM] Monitor {MonitorId} completed stream ({CharCount} chars)", _monitorPingInfoID, sb.Length);
         return sb.ToString();
     }
 
