@@ -78,6 +78,32 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
    `PredictStatusAlert` messages (`alertUpdatePredictStatusAlerts`) so the alert service
    can notify users.
 
+## TimesFM Prediction Monitor
+
+### Model lifecycle
+- `MonitorMLService` caches a `TimesFmRabbitModel` per monitor and per mode ("Change" vs "Spike"), initializing adapters on demand with the configured confidence and pre-train values.
+- Both modes share the same TimesFM adapter; service-level thresholds determine how many alerts or martingale excursions constitute an incident.
+- Each evaluation window warms up on the first `PreTrain` samples, then reuses the adapters for subsequent scoring runs to avoid reconnecting to Rabbit.
+
+### Request/response flow
+- Every post-pretrain sample produces a prefix `[0..i]` of round-trip times; these prefixes form the `series` payload that is serialized into an OpenAI-style chat request targeting `google/timesfm-2.5-200m-pytorch`.
+- Requests stream over RabbitMQ (`oa.chat.create` and `oa.chat.reply`) via `RabbitTransport`. The adapter concatenates response chunks until the end-of-stream sentinel arrives.
+- Forecasts and quantiles are normalized to a consistent shape, tolerating `[v]`, `[[v]]`, or multi-dimensional `BxHx10` quantile layouts. Missing quantiles fall back to symmetric +/-3 sigma bands.
+
+### Detection heuristics
+- Bands are widened with robust statistics (rolling MAD-derived sigma) and clamped to absolute (`5 ms`) or relative (`15%` of |forecast|) minimum widths so jitter does not create razor-thin thresholds.
+- A change flag requires both persistence (>=3 consecutive breaches or 6-of-12 recent breaches) and a magnitude gate (>=20% shift from the rolling baseline median). Confirmed changes trigger a 30-sample cooldown that freezes sigma to avoid overreacting while the system settles.
+- The adapter emits four telemetry channels per sample: `alert` (0/1), `score` (normalized residual), `p` (p-value shaped by persistence), and `martingale` (tempered evidence accumulator with a 25% dead-zone inside the band).
+
+### Observability and alerting
+- Informational logs capture batch summaries (`timesfm summary …`) alongside structured JSON samples (first four and last two rows) so on-call engineers can see residuals, gates, and martingale values without replaying the run.
+- `MonitorMLService` rolls those predictions into `DetectionResult` objects, counting detections, tracking first-occurrence timestamps, averaging residuals for flagged points, and recording minimum p-values / maximum martingale values.
+- Updated results persist to the `PredictStatus` records and publish through Rabbit so downstream alerting services can fan out notifications.
+
+### Testing touchpoints
+- Integration tests spin up an in-process Rabbit responder to exercise happy paths, quantile fallbacks, streaming multi-chunk replies, cooldown behavior, and failure cases (unknown forecast shapes).
+- Run them locally with `dotnet test`; the suite lives under `Tests/TimesFmRabbitModelTests.cs`.
+
 ## Testing
 Integration tests (`Tests/TimesFmRabbitModelTests.cs`) spin up a fake responder to
 simulate TimesFM responses:
