@@ -64,8 +64,25 @@ namespace NetworkMonitor.ML
                      }
             ));
 
-            //services.AddSingleton<IMLModelFactory, MLModelFactory>();
-            services.AddSingleton<IMLModelFactory, TimesFmModelFactory>();
+            var modelSelection = Configuration.GetValue<string>("ModelSelection") ?? "TimesFM";
+            services.AddSingleton<IMLModelFactory>(sp =>
+            {
+                if (string.Equals(modelSelection, "TimesFM", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new TimesFmModelFactory(
+                        sp.GetRequiredService<IRabbitRepo>(),
+                        sp.GetRequiredService<SystemParams>(),
+                        sp.GetRequiredService<ILoggerFactory>(),
+                        sp.GetRequiredService<MLParams>());
+                }
+
+                if (string.Equals(modelSelection, "MicrosoftMLTS", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new MLModelFactory();
+                }
+
+                throw new InvalidOperationException($"Unsupported ModelSelection value '{modelSelection}'. Valid options are 'TimesFM' and 'MicrosoftMLTS'.");
+            });
 
             services.AddSingleton<IMonitorMLDataRepo, MonitorMLDataRepo>();
             services.AddSingleton<IMonitorMLService, MonitorMLService>();

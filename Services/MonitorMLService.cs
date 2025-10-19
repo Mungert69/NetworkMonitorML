@@ -100,27 +100,27 @@ public class MonitorMLService : IMonitorMLService
     }
     private AdaptiveWindowManager.AdaptiveWindowSettings BuildAdaptiveSettings()
     {
+        int changePreTrainMin = Math.Max(15, _mlParams.ChangePreTrain / 2);
+        changePreTrainMin = Math.Min(changePreTrainMin, _mlParams.ChangePreTrain);
+        int spikePreTrainMin = Math.Max(10, _mlParams.SpikePreTrain / 2);
+        spikePreTrainMin = Math.Min(spikePreTrainMin, _mlParams.SpikePreTrain);
+
         int changeMax = Math.Max(_mlParams.PredictWindow, _mlParams.ChangePreTrain + 1);
         int spikeMax = Math.Max(_mlParams.PredictWindow, _mlParams.SpikePreTrain + 1);
 
-        int changeMin = Math.Max(40, _mlParams.ChangePreTrain + 1);
+        int changeMin = Math.Max(40, changePreTrainMin + 1);
         if (changeMin >= changeMax)
-            changeMin = Math.Max(_mlParams.ChangePreTrain + 1, changeMax - 1);
+            changeMin = Math.Max(changePreTrainMin + 1, changeMax - 1);
 
-        int spikeMin = Math.Max(20, _mlParams.SpikePreTrain + 1);
+        int spikeMin = Math.Max(20, spikePreTrainMin + 1);
         if (spikeMin >= spikeMax)
-            spikeMin = Math.Max(_mlParams.SpikePreTrain + 1, spikeMax - 1);
+            spikeMin = Math.Max(spikePreTrainMin + 1, spikeMax - 1);
 
         int changeStep = Math.Max(5, (changeMax - changeMin) / 6);
         if (changeStep == 0) changeStep = 5;
 
         int spikeStep = Math.Max(5, (spikeMax - spikeMin) / 6);
         if (spikeStep == 0) spikeStep = 5;
-
-        int changePreTrainMin = Math.Max(15, _mlParams.ChangePreTrain / 2);
-        changePreTrainMin = Math.Min(changePreTrainMin, _mlParams.ChangePreTrain);
-        int spikePreTrainMin = Math.Max(10, _mlParams.SpikePreTrain / 2);
-        spikePreTrainMin = Math.Min(spikePreTrainMin, _mlParams.SpikePreTrain);
 
         int changePreTrainStep = Math.Max(1, (_mlParams.ChangePreTrain - changePreTrainMin) / 2);
         if (changePreTrainStep < 5) changePreTrainStep = 5;
@@ -175,6 +175,7 @@ public class MonitorMLService : IMonitorMLService
         {
             tfModel.PreTrain = preTrain;
             tfModel.Confidence = confidence;
+            tfModel.ApplySettings(_mlParams.ActiveModelParameters.TimesFmSettings);
         }
     }
     private async Task<IMLModel> GetOrCreateModel(int monitorIPID, string modelType, double confidence, int preTrain)
@@ -435,13 +436,13 @@ public class MonitorMLService : IMonitorMLService
         var detectionResult = new DetectionResult();
         try
         {
-            await EnsureModelInitialized(monitorIPID, "Change", _mlParams.SpikeConfidence, SpikePreTrain);
-            detectionResult = PredictForHostSpike(input, monitorIPID);
+            await EnsureModelInitialized(monitorIPID, "Change", _mlParams.ChangeConfidence, ChangePreTrain);
+            detectionResult = PredictForHostChange(input, monitorIPID);
         }
         catch (Exception e)
         {
             detectionResult.Result.Success = false;
-            detectionResult.Result.Message = $" Error : Could not run InitSpikeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
+            detectionResult.Result.Message = $" Error : Could not run InitChangeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
             return detectionResult;
         }
         return detectionResult;
@@ -457,7 +458,7 @@ public class MonitorMLService : IMonitorMLService
         catch (Exception e)
         {
             detectionResult.Result.Success = false;
-            detectionResult.Result.Message = $" Error : Could not run InitSpikeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
+            detectionResult.Result.Message = $" Error : Could not run InitChangeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
             return detectionResult;
         }
         return detectionResult;
@@ -624,7 +625,7 @@ public class MonitorMLService : IMonitorMLService
             dateOfDetection = datePingInfo.DateSent.ToLongDateString() + " UTC";
         }
         // Ensure there are predictions before attempting to find the max Martingale value
-        if (predictions.Any())
+        if (predictions.Any() && predictions[0].Prediction.Length > 3)
         {
             result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
         }
@@ -647,7 +648,10 @@ public class MonitorMLService : IMonitorMLService
         result.AverageScore = prediction.Prediction[1];
         result.MinPValue = prediction.Prediction[2];
         // Martingale value
-        result.MaxMartingaleValue = prediction.Prediction[3];
+        if (prediction.Prediction.Length > 3)
+        {
+            result.MaxMartingaleValue = prediction.Prediction[3];
+        }
         // Index of detection:
         result.IndexOfFirstDetection = result.IsIssueDetected ? 0 : -1;
         // 0 because it's the only input, -1 to signal no detection
@@ -670,6 +674,10 @@ public class MonitorMLService : IMonitorMLService
         result.NumberOfDetections = result.IsIssueDetected ? 1 : 0;
         result.AverageScore = prediction.Prediction[1];
         result.MinPValue = prediction.Prediction[2];
+        if (prediction.Prediction.Length > 3)
+        {
+            result.MaxMartingaleValue = prediction.Prediction[3];
+        }
         // Index of detection:
         result.IndexOfFirstDetection = result.IsIssueDetected ? 0 : -1;
         // 0 because it's the only input, -1 to signal no detection
@@ -700,6 +708,10 @@ public class MonitorMLService : IMonitorMLService
             dateOfDetection = datePingInfo.DateSent.ToLongDateString() + " UTC";
             result.AverageScore = predictions.Where(p => p.Prediction[0] == 1).Average(p => p.Prediction[1]);
             result.MinPValue = predictions.Where(p => p.Prediction[0] == 1).Min(p => p.Prediction[2]);
+        }
+        if (predictions.Any() && predictions[0].Prediction.Length > 3)
+        {
+            result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
         }
         result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at {dateOfDetection}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
         result.Result.Success = true;

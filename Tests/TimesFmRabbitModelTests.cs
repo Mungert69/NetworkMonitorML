@@ -57,7 +57,7 @@ public sealed class TimesFmRabbitModelTests
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 42, confidence: 0.8, preTrain: 2, routingKey: "");
+            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 42, confidence: 0.8, preTrain: 2, modelType: "Change", routingKey: "");
 
             var window = MakePings(90, 95, 100, 101, 102).ToList();
             var preds = model.PredictList(window).ToList();
@@ -99,7 +99,7 @@ public sealed class TimesFmRabbitModelTests
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 7, confidence: 0.8, preTrain: 1, routingKey: "");
+            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 7, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
 
             var window = MakePings(49, 50, 51).ToList();
             var preds = model.PredictList(window).ToList();
@@ -156,13 +156,13 @@ public sealed class TimesFmRabbitModelTests
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
 
-            var model1 = new TimesFmRabbitModel(repo1, sys, log, monitorPingInfoID: 1, confidence: 0.8, preTrain: 1, routingKey: "");
+            var model1 = new TimesFmRabbitModel(repo1, sys, log, monitorPingInfoID: 1, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
             var preds1 = model1.PredictList(MakePings(9.7, 10.2).ToList()).ToList();
 
             var repo2 = MakeRabbitRepo(sys);
             try
             {
-                var model2 = new TimesFmRabbitModel(repo2, sys, log, monitorPingInfoID: 2, confidence: 0.8, preTrain: 1, routingKey: "");
+                var model2 = new TimesFmRabbitModel(repo2, sys, log, monitorPingInfoID: 2, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
                 var preds2 = model2.PredictList(MakePings(9.7, 10.2).ToList()).ToList();
 
                 Assert.Equal(preds1.Select(p => p.Prediction[0]), preds2.Select(p => p.Prediction[0]));
@@ -214,7 +214,7 @@ public sealed class TimesFmRabbitModelTests
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 77, confidence: 0.8, preTrain: 2, routingKey: "");
+            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 77, confidence: 0.8, preTrain: 2, modelType: "Change", routingKey: "");
 
             var window = MakePings(100, 100, 100, 100, 100, 100).ToList();
             var preds = model.PredictList(window).ToList();
@@ -272,7 +272,7 @@ public sealed class TimesFmRabbitModelTests
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 5, confidence: 0.8, preTrain: 2, routingKey: "");
+            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 5, confidence: 0.8, preTrain: 2, modelType: "Change", routingKey: "");
 
             var window = MakePings(40, 41, 42, 43, 44).ToList();
             var preds = model.PredictList(window).ToList();
@@ -308,7 +308,7 @@ public sealed class TimesFmRabbitModelTests
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 2, confidence: 0.8, preTrain: 1, routingKey: "");
+            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 2, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
 
             var window = MakePings(1, 2, 3).ToList();
             Assert.Throws<InvalidOperationException>(() => model.PredictList(window).ToList());
@@ -356,7 +356,7 @@ public sealed class TimesFmRabbitModelTests
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 101, confidence: 0.8, preTrain: 2, routingKey: "");
+            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 101, confidence: 0.8, preTrain: 2, modelType: "Change", routingKey: "");
 
             var cooldownField = model.GetType().GetField("_cooldown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             cooldownField!.SetValue(model, 5);

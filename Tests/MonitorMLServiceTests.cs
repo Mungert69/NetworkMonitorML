@@ -75,7 +75,7 @@ namespace NetworkMonitor.MonitorML.Tests
             var result = await service.CheckHost(monitorIPID, dataSetID);
 
             // Assert
-            Assert.True(result.Success, "The prediction did not compete with success.");
+            Assert.True(result.Success, $"The prediction did not compete with success. Message: {result.Message}");
             var detectionResult = result.Data;
 
             // Now you can assert specific aspects of the DetectionResult
@@ -126,7 +126,7 @@ namespace NetworkMonitor.MonitorML.Tests
 
             // Assert
             // Assuming that an accurate prediction with changed pattern means success
-            Assert.True(result.Success, "The prediction did not compete with success.");
+            Assert.True(result.Success, $"The prediction did not compete with success. Message: {result.Message}");
             var detectionResult = result.Data;
 
             // Now you can assert specific aspects of the DetectionResult
@@ -173,7 +173,7 @@ namespace NetworkMonitor.MonitorML.Tests
 
             // Act
             var result = await service.CheckHost(monitorIPID, dataSetID);
-            Assert.True(result.Success, "The prediction did not compete with success.");
+            Assert.True(result.Success, $"The prediction did not compete with success. Message: {result.Message}");
             var detectionResult = result.Data;
 
             // Now you can assert specific aspects of the DetectionResult
@@ -226,7 +226,7 @@ namespace NetworkMonitor.MonitorML.Tests
 
             // Act
             var result = await service.CheckLatestHostsTest();
-            Assert.True(result.Success, "CheckLatestHosts did not compete with success.");
+            Assert.True(result.Success, $"CheckLatestHosts did not compete with success. Message: {result.Message}");
 
 #pragma warning disable CS8602 // Nullable warning
             Assert.True(result.Data[0].Data.ChangeResult.IsIssueDetected, "No change was detected.");

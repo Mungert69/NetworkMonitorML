@@ -100,6 +100,36 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
 - `MonitorMLService` rolls those predictions into `DetectionResult` objects, counting detections, tracking first-occurrence timestamps, averaging residuals for flagged points, and recording minimum p-values / maximum martingale values. Windows downshift after multiple quiet runs and spring back to the configured maximum as soon as martingale/alerts heat up.
 - Updated results persist to the `PredictStatus` records and publish through Rabbit so downstream alerting services can fan out notifications.
 
+## Model configuration reference
+
+`appsettings.json` contains a `ModelParameters` block that lets each backend (TimesFM or MicrosoftMLTS) run with custom sensitivity. Every value is optional: omit a field to fall back to the defaults shown below.
+
+### Shared parameters
+
+- **ChangeConfidence** – probability threshold for change-point detection. Lower values make the change model fire on smaller shifts; higher values demand stronger evidence.
+- **SpikeConfidence** – confidence level for spike detection. Lowering it increases sensitivity to one-off spikes; raising it suppresses noise-induced alerts.
+- **ChangePreTrain** – number of warm-up samples consumed before the change detector emits results. Larger buffers stabilise the baseline but delay initial visibility.
+- **SpikePreTrain** – warm-up window for spike detection. More history reduces noise but slows reaction time.
+- **PredictWindow** – maximum number of samples fetched for each run. Bigger windows retain more context; smaller windows reduce compute.
+- **SpikeDetectionThreshold** – post-processing guard that requires at least N spike detections before the service marks a spike incident.
+
+### TimesFM-only settings (`TimesFmSettings`)
+
+- **RunLength** – minimum consecutive band breaches before a change can fire. Increase to reduce false positives from single outliers.
+- **KOfNK / KOfNN** – persistence gate: at least `KOfNK` of the last `KOfNN` samples must be outside the band. Tune these to balance responsiveness vs. stability.
+- **MadAlpha** – multiples of the rolling sigma added to the band. Higher values widen bands (fewer alerts); lower values tighten them (more alerts).
+- **MinBandAbs** – absolute minimum band width in milliseconds. Prevents bands collapsing on calm series; raise it if you want to ignore small jitter entirely.
+- **MinBandRel** – minimum band width relative to the forecast magnitude. Useful when latency scales with load; higher values reduce proportional alerts.
+- **RollSigmaWindow** – lookback window for sigma estimation. Larger windows smooth volatility; smaller windows react faster to variance changes.
+- **BaselineWindow** – window for the median/MAD baseline used in the magnitude gate. Longer windows resist drift; shorter windows adapt sooner.
+- **SigmaCooldown** – number of samples to freeze sigma after a confirmed change, preventing immediate re-triggering while the system stabilises.
+- **MinRelShift** – minimum relative deviation (vs. baseline) required in addition to persistence. Higher values demand bigger percentage shifts before alerting.
+- **SampleRows** – number of diagnostic rows logged per batch (first few and last few samples). Raising it increases observability cost but not detection behaviour.
+- **NearMissFraction** – fraction of the band considered a “near miss” for logging and counts. Lower values only record points very close to the edge.
+- **LogJson** – when true, logs structured JSON samples; set to false for terse text output.
+
+Because `MonitorMLService` replays settings on every reuse, you can adjust the config and restart the service to adopt new thresholds without code changes.
+
 ### Testing touchpoints
 - Integration tests spin up an in-process Rabbit responder to exercise happy paths, quantile fallbacks, streaming multi-chunk replies, cooldown behavior, and failure cases (unknown forecast shapes).
 - Run them locally with `dotnet test`; the suite lives under `Tests/TimesFmRabbitModelTests.cs`.

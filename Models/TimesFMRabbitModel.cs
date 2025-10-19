@@ -20,33 +20,28 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
     private readonly ILogger<TimesFmRabbitModel> _log;
     private readonly string _routingKey;
     private readonly int _monitorPingInfoID;
+    private readonly string _modelType;
 
     public double Confidence { get; set; }
     public int PreTrain { get; set; }
 
-    // ---- Sensitivity + Adaptation knobs ----
-    // Persistence (temporal gating)
-    private const int RUN_LEN = 3;       // require ≥3 consecutive outsides
-    private const int K_OF_N_K = 6;      // or ≥6 outsides within last N
-    private const int K_OF_N_N = 12;     // window for k-of-n
+    // ---- Sensitivity + Adaptation knobs (configurable) ----
+    private TimesFmResolvedSettings _settings = new();
+    private int _runLen;
+    private int _kOfNK;
+    private int _kOfNN;
+    private double _madAlpha;
+    private double _minBandAbs;
+    private double _minBandRel;
+    private int _rollSigmaWin;
+    private int _baselineWin;
+    private int _sigmaCooldownSetting;
+    private double _minRelShift;
+    private int _sampleRows;
+    private double _nearMissFrac;
+    private bool _logJson = true;
 
-    // Band calibration (jitter-aware + level-aware)
-    private const double MAD_ALPHA = 1.0;     // widen band by +/- MAD_ALPHA * sigma
-    private const double MIN_BAND_ABS = 5.0;  // absolute min width (ms)
-    private const double MIN_BAND_REL = 0.15; // relative min width vs |yhat|
-
-    // Rolling calibration (lets sigma follow regime shifts)
-    private const int ROLL_SIGMA_WIN = 60;    // samples to compute rolling sigma
-    private const int BASELINE_WIN   = 120;   // samples for rolling baseline (median/MAD)
-
-    // Post-alert behavior
-    private const int    SIGMA_COOLDOWN  = 30;   // freeze sigma for N samples after CHANGE
-    private const double MIN_REL_SHIFT   = 0.20; // require ≥20% shift vs baseline to call CHANGE
-
-    // Logging
-    private const int SAMPLE_ROWS = 6;          // first 4 + last 2 rows logged
-    private const double NEAR_MISS_FRAC = 0.10; // within 10% of band edge
-    private const bool LOG_JSON = true;         // structured JSON for diagnostics
+    private static readonly TimeSpan LlmStreamTimeout = TimeSpan.FromMinutes(3);
 
     // State for cooldown/rolling sigma
     private int _cooldown = 0;
@@ -66,14 +61,58 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         int monitorPingInfoID,
         double confidence,
         int preTrain,
-        string routingKey)
+        string modelType,
+        string routingKey,
+        TimesFmResolvedSettings? settings = null)
     {
         _tx = new RabbitTransport(rabbitRepo, sys, routingKey, log);
         _log = log;
         _routingKey = routingKey;
         _monitorPingInfoID = monitorPingInfoID;
+        _modelType = string.IsNullOrWhiteSpace(modelType) ? "unknown" : modelType;
         Confidence = confidence;
         PreTrain = preTrain;
+        ApplySettings(settings ?? new TimesFmResolvedSettings());
+    }
+
+    public void ApplySettings(TimesFmResolvedSettings settings)
+    {
+        if (settings == null)
+            return;
+
+        _settings = new TimesFmResolvedSettings
+        {
+            RunLength = settings.RunLength,
+            KOfNK = settings.KOfNK,
+            KOfNN = settings.KOfNN,
+            MadAlpha = settings.MadAlpha,
+            MinBandAbs = settings.MinBandAbs,
+            MinBandRel = settings.MinBandRel,
+            RollSigmaWindow = settings.RollSigmaWindow,
+            BaselineWindow = settings.BaselineWindow,
+            SigmaCooldown = settings.SigmaCooldown,
+            MinRelShift = settings.MinRelShift,
+            SampleRows = settings.SampleRows,
+            NearMissFraction = settings.NearMissFraction,
+            LogJson = settings.LogJson
+        };
+
+        _runLen = Math.Max(1, _settings.RunLength);
+        _kOfNN = Math.Max(1, _settings.KOfNN);
+        _kOfNK = Math.Clamp(_settings.KOfNK, 1, _kOfNN);
+        _madAlpha = Math.Max(0.0, _settings.MadAlpha);
+        _minBandAbs = Math.Max(0.0, _settings.MinBandAbs);
+        _minBandRel = Math.Max(0.0, _settings.MinBandRel);
+        _rollSigmaWin = Math.Max(1, _settings.RollSigmaWindow);
+        _baselineWin = Math.Max(1, _settings.BaselineWindow);
+        _sigmaCooldownSetting = Math.Max(0, _settings.SigmaCooldown);
+        _minRelShift = Math.Max(0.0, _settings.MinRelShift);
+        _sampleRows = Math.Max(0, _settings.SampleRows);
+        _nearMissFrac = Math.Clamp(_settings.NearMissFraction, 0.0, 1.0);
+        _logJson = _settings.LogJson;
+
+        if (_cooldown > _sigmaCooldownSetting)
+            _cooldown = _sigmaCooldownSetting;
     }
 
     public void Train(List<LocalPingInfo> data) { /* no-op */ }
@@ -106,7 +145,8 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             batchSeries.Add(rtts.Take(i).ToList());
 
         _log.LogDebug(
-            "[TimesFM] Monitor {MonitorId} sending {SeriesCount} prefixes (last len {LastLen}) via routing key '{RoutingKey}'",
+            "[TimesFM] {ModelType} monitor {MonitorId} sending {SeriesCount} prefixes (last len {LastLen}) via routing key '{RoutingKey}'",
+            _modelType,
             _monitorPingInfoID,
             batchSeries.Count,
             batchSeries.Count > 0 ? batchSeries[^1].Count : 0,
@@ -133,7 +173,17 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             }
         });
 
-        var content = ReadSingleAssistantContentAsync(payloadJson).GetAwaiter().GetResult();
+        string content;
+        try
+        {
+            using var cts = new CancellationTokenSource(LlmStreamTimeout);
+            content = ReadSingleAssistantContentAsync(payloadJson, cts.Token).GetAwaiter().GetResult();
+        }
+        catch (OperationCanceledException ex)
+        {
+            _log.LogError(ex, "[TimesFM] {ModelType} monitor {MonitorId} request timed out after {Timeout}", _modelType, _monitorPingInfoID, LlmStreamTimeout);
+            throw new TimeoutException($"TimesFM streaming response timed out after {LlmStreamTimeout}", ex);
+        }
         var resp = JsonSerializer.Deserialize<TimesFmResponse>(content)
                    ?? throw new InvalidOperationException("TimesFM: null response");
 
@@ -162,10 +212,10 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
         int near = 0, outsideCnt = 0, flaggedCnt = 0;
         double maxResid = 0, minMargin = double.PositiveInfinity;
-        var samples = new List<string>(SAMPLE_ROWS);
+        var samples = new List<string>(Math.Max(0, _sampleRows));
 
         int runLen = 0;
-        var kOfNQueue = new Queue<bool>(K_OF_N_N);
+        var kOfNQueue = new Queue<bool>(_kOfNN);
         int kOfNCount = 0;
 
         for (int i = PreTrain; i < n; i++)
@@ -175,7 +225,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             var yhat = ForecastAt(j);
 
             // --- Rolling baseline (for magnitude gate + observability) ---
-            int bStart = Math.Max(0, i - BASELINE_WIN);
+            int bStart = Math.Max(0, i - _baselineWin);
             var baseWin = rtts.Skip(bStart).Take(i - bStart).ToArray();
             double baselineMed = baseWin.Length > 0 ? Median(baseWin) : yhat;
             double baselineMad = baseWin.Length > 0
@@ -191,7 +241,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             }
             else
             {
-                int sStart = Math.Max(0, i - ROLL_SIGMA_WIN);
+                int sStart = Math.Max(0, i - _rollSigmaWin);
                 sigma = RobustSigma(rtts.Skip(sStart).Take(i - sStart));
                 _lastSigma = sigma;
             }
@@ -213,12 +263,12 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             }
 
             // Inflate band by robust noise
-            lo -= MAD_ALPHA * sigma;
-            hi += MAD_ALPHA * sigma;
+            lo -= _madAlpha * sigma;
+            hi += _madAlpha * sigma;
 
             // Enforce minimum width (protect from razor-thin bands)
             double w = hi - lo;
-            double minW = Math.Max(MIN_BAND_ABS, MIN_BAND_REL * Math.Max(1.0, Math.Abs(yhat)));
+            double minW = Math.Max(_minBandAbs, _minBandRel * Math.Max(1.0, Math.Abs(yhat)));
             if (!double.IsFinite(w) || w < minW)
             {
                 double half = 0.5 * minW;
@@ -235,31 +285,31 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             // --- Persistence gates ---
             runLen = outside ? runLen + 1 : 0;
 
-            if (kOfNQueue.Count == K_OF_N_N)
+            if (kOfNQueue.Count == _kOfNN)
             {
                 if (kOfNQueue.Dequeue()) kOfNCount--;
             }
             kOfNQueue.Enqueue(outside);
             if (outside) kOfNCount++;
 
-            bool persistenceHit = (runLen >= RUN_LEN) || (kOfNCount >= K_OF_N_K);
+            bool persistenceHit = (runLen >= _runLen) || (kOfNCount >= _kOfNK);
 
             // --- Relative magnitude gate (vs baseline) ---
             double relShift = Math.Abs(yhat - baselineMed) / Math.Max(1.0, Math.Abs(baselineMed));
-            bool bigShift = relShift >= MIN_REL_SHIFT;
+            bool bigShift = relShift >= _minRelShift;
 
             bool changeFlag = persistenceHit && bigShift;
 
             // cooldown kicks in on the first confirmed change
             if (changeFlag && _cooldown == 0)
-                _cooldown = SIGMA_COOLDOWN;
+                _cooldown = _sigmaCooldownSetting;
 
             // --- p-values & martingale ---
             var baseTail = TailP(loIdx, hiIdx);
 
             // p for *output*: smaller when persistent/confirmed; neutral 0.5 when inside
             double pOut = changeFlag
-                ? Math.Max(1e-6, baseTail * Math.Pow(0.5, Math.Max(0, runLen - RUN_LEN + 1)))
+                ? Math.Max(1e-6, baseTail * Math.Pow(0.5, Math.Max(0, runLen - _runLen + 1)))
                 : (outside ? baseTail : 0.5);
 
             // p for *martingale*: dead-zone inside the band for flatter calm behavior.
@@ -293,17 +343,18 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             maxResid = Math.Max(maxResid, resid);
             if (double.IsFinite(margin)) minMargin = Math.Min(minMargin, margin);
             if (outside) outsideCnt++;
-            if (!outside && double.IsFinite(fracToEdge) && fracToEdge <= NEAR_MISS_FRAC) near++;
+            if (!outside && double.IsFinite(fracToEdge) && fracToEdge <= _nearMissFrac) near++;
             if (changeFlag) flaggedCnt++;
 
             // sample: first 4 and last 2 rows
             if (samples.Count < 4 || j >= (n - PreTrain) - 2)
             {
-                if (LOG_JSON)
+                if (_logJson)
                 {
                     var obj = new
                     {
                         model = "timesfm",
+                        mode = _modelType,
                         monitor = _monitorPingInfoID,
                         j,
                         y,
@@ -315,8 +366,8 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                         sigma,
                         width = w,
                         runLen,
-                        kOfN = new { k = K_OF_N_K, n = K_OF_N_N, count = kOfNCount },
-                        baseline = new { median = baselineMed, mad = baselineMad, relShift, minRelShift = MIN_REL_SHIFT },
+                        kOfN = new { k = _kOfNK, n = _kOfNN, count = kOfNCount },
+                        baseline = new { median = baselineMed, mad = baselineMad, relShift, minRelShift = _minRelShift },
                         gates = new
                         {
                             outside,
@@ -326,7 +377,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                         },
                         p = new { output = pOut, martingale_p = pMart },
                         martingale = _martingale,
-                        flag = changeFlag ? "CHANGE" : (outside ? "OUT" : (fracToEdge <= NEAR_MISS_FRAC ? "NEAR" : "OK"))
+                        flag = changeFlag ? "CHANGE" : (outside ? "OUT" : (fracToEdge <= _nearMissFrac ? "NEAR" : "OK"))
                     };
                     samples.Add(JsonSerializer.Serialize(obj));
                 }
@@ -335,7 +386,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                     samples.Add(
                         $"#{j} y={y:0.###} ŷ={yhat:0.###} lo={lo:0.###} hi={hi:0.###} " +
                         $"resid={resid:0.###} norm={normResid:0.###} σ={sigma:0.###} w={w:0.###} " +
-                        $"run={runLen} kOfN={K_OF_N_K}/{K_OF_N_N}={kOfNCount} " +
+                        $"run={runLen} kOfN={_kOfNK}/{_kOfNN}={kOfNCount} " +
                         $"base≈{baselineMed:0.###} relShift={relShift:0.###} pOut={pOut:0.###} " +
                         $"M={_martingale:0.###} {(changeFlag ? "CHANGE" : (outside ? "OUT" : "OK"))} cd={_cooldown}"
                     );
@@ -358,12 +409,12 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             int B = n - PreTrain;
             var qpair = PickQuantileIndices(Confidence);
             _log.LogInformation(
-                "timesfm summary monitor={Monitor} B={B} conf={Conf:0.##} band={Lo}%..{Hi}% outside={Outside} flagged={Flagged} near={Near} maxResid={Max:0.###} minMargin={Min:0.###} coolDown={Cooldown} maxM={MaxM:0.###}",
-                _monitorPingInfoID, B, Confidence, qpair.loIdx * 10, qpair.hiIdx * 10,
+                "timesfm summary type={Type} monitor={Monitor} B={B} conf={Conf:0.##} band={Lo}%..{Hi}% outside={Outside} flagged={Flagged} near={Near} maxResid={Max:0.###} minMargin={Min:0.###} coolDown={Cooldown} maxM={MaxM:0.###}",
+                _modelType, _monitorPingInfoID, B, Confidence, qpair.loIdx * 10, qpair.hiIdx * 10,
                 outsideCnt, flaggedCnt, near, maxResid, double.IsInfinity(minMargin) ? double.NaN : minMargin, _cooldown, _maxMartingaleThisBatch
             );
             foreach (var line in samples)
-                _log.LogInformation("timesfm sample {Line}", line);
+                _log.LogInformation("timesfm sample type={Type} {Line}", _modelType, line);
         }
 
         return preds;
@@ -372,7 +423,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
     public void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)
     {
         var sb = new StringBuilder();
-        sb.Append($"[{_monitorPingInfoID}] TimesFM preds: ");
+        sb.Append($"[{_monitorPingInfoID}] TimesFM({_modelType}) preds: ");
         int i = 0;
         foreach (var p in predictions.Take(5))
         {
@@ -391,7 +442,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         var requestObj = JsonSerializer.Deserialize<object>(openAiChatRequestJson)!;
 
         var sb = new StringBuilder();
-        _log.LogDebug("[TimesFM] Monitor {MonitorId} streaming request...", _monitorPingInfoID);
+        _log.LogDebug("[TimesFM] {ModelType} monitor {MonitorId} streaming request...", _modelType, _monitorPingInfoID);
 
         await foreach (var chunkJson in _tx.CreateChatCompletionStreamAsync(requestObj, ct))
         {
@@ -414,7 +465,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                 _log.LogWarning(ex, "Chunk parse failed");
             }
         }
-        _log.LogDebug("[TimesFM] Monitor {MonitorId} completed stream ({CharCount} chars)", _monitorPingInfoID, sb.Length);
+        _log.LogDebug("[TimesFM] {ModelType} monitor {MonitorId} completed stream ({CharCount} chars)", _modelType, _monitorPingInfoID, sb.Length);
         return sb.ToString();
     }
 
