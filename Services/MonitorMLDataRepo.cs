@@ -100,6 +100,17 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     public async Task<MonitorPingInfo?> GetDBWithContextMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID, MonitorContext monitorContext)
     {
         // Query the latest or specific MonitorPingInfo
+        var monitorIP = await monitorContext.MonitorIPs
+            .AsNoTracking()
+            .Include(ip => ip.ModelConfig)
+            .FirstOrDefaultAsync(ip => ip.ID == monitorIPID);
+
+        int resolvedWindowSize = windowSize;
+        if (monitorIP?.ModelConfig?.PredictWindow is int hostWindow && hostWindow > resolvedWindowSize)
+        {
+            resolvedWindowSize = hostWindow;
+        }
+
         var latestMonitorPingInfo = await monitorContext.MonitorPingInfos
             .AsNoTracking()
             .Include(mpi => mpi.PingInfos)
@@ -111,7 +122,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             return null;
 
         // Calculate if additional PingInfos are needed to reach the windowSize
-        int additionalPingInfosNeeded = windowSize - latestMonitorPingInfo.PingInfos.Count;
+        int additionalPingInfosNeeded = resolvedWindowSize - latestMonitorPingInfo.PingInfos.Count;
         if (additionalPingInfosNeeded > 0)
         {
             int previousDataSetID = dataSetID == 0
@@ -135,6 +146,11 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
         // Sort PingInfos by DateSentInt
         latestMonitorPingInfo.PingInfos.Sort((x, y) => x.DateSentInt.CompareTo(y.DateSentInt));
+
+        if (monitorIP?.ModelConfig != null)
+        {
+            latestMonitorPingInfo.ModelConfig = monitorIP.ModelConfig;
+        }
 
         return latestMonitorPingInfo;
     }
@@ -175,6 +191,15 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             .Include(p => p.PredictStatus)
             .FirstOrDefaultAsync(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
             if (latestMonitorPingInfo == null) return null;
+
+            var monitorIP = await monitorContext.MonitorIPs
+                .AsNoTracking()
+                .Include(ip => ip.ModelConfig)
+                .FirstOrDefaultAsync(ip => ip.ID == monitorIPID);
+            if (monitorIP?.ModelConfig != null)
+            {
+                latestMonitorPingInfo.ModelConfig = monitorIP.ModelConfig;
+            }
 
             return latestMonitorPingInfo;
         }
@@ -450,8 +475,6 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     }
 
 }
-
-
 
 
 
