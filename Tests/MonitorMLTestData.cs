@@ -191,7 +191,7 @@ public class MonitorMLTestData
     }
     public static MLParams GetMLParams()
     {
-        var mlParams = new MLParams()
+        return new MLParams
         {
             PredictWindow = 50,
             SpikeDetectionThreshold = 2,
@@ -200,7 +200,6 @@ public class MonitorMLTestData
             ChangePreTrain = 20,
             SpikePreTrain = 20
         };
-        return mlParams;
     }
     public static List<ProcessorObj> GetProcesorList()
     {

@@ -97,7 +97,7 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
 
 ### Observability and alerting
 - Informational logs capture batch summaries (`timesfm summary …`) alongside structured JSON samples (first four and last two rows) so on-call engineers can see residuals, gates, and martingale values without replaying the run.
-- `MonitorMLService` rolls those predictions into `DetectionResult` objects, counting detections, tracking first-occurrence timestamps, averaging residuals for flagged points, and recording minimum p-values / maximum martingale values.
+- `MonitorMLService` rolls those predictions into `DetectionResult` objects, counting detections, tracking first-occurrence timestamps, averaging residuals for flagged points, and recording minimum p-values / maximum martingale values. Windows downshift after multiple quiet runs and spring back to the configured maximum as soon as martingale/alerts heat up.
 - Updated results persist to the `PredictStatus` records and publish through Rabbit so downstream alerting services can fan out notifications.
 
 ### Testing touchpoints

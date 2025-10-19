@@ -51,15 +51,40 @@ public class MonitorMLService : IMonitorMLService
     private readonly IMonitorMLDataRepo _monitorMLDataRepo;
     private SystemParams _systemParams;
     private MLParams _mlParams;
+    private readonly AdaptiveWindowManager _windowManager;
     private bool _isRunning;
     private DeviationAnalyzer _deviationAnalyzer = new DeviationAnalyzer(10, 1);
-    public int PredictWindow { get => _mlParams.PredictWindow; set => _mlParams.PredictWindow = value; }
+    public int PredictWindow
+    {
+        get => _mlParams.PredictWindow;
+        set
+        {
+            _mlParams.PredictWindow = value;
+            ReconfigureAdaptiveSettings();
+        }
+    }
     public int MartingaleDetectionThreshold { get => _martingaleDetectionThreshold; set => _martingaleDetectionThreshold = value; }
     public int SpikeDetectionThreshold { get => _mlParams.SpikeDetectionThreshold; set => _mlParams.SpikeDetectionThreshold = value; }
     public double SpikeConfidence { get => _mlParams.SpikeConfidence; set => _mlParams.SpikeConfidence = value; }
     public double ChangeConfidence { get => _mlParams.ChangeConfidence; set => _mlParams.ChangeConfidence = value; }
-    public int ChangePreTrain { get => _mlParams.ChangePreTrain; set => _mlParams.ChangePreTrain = value; }
-    public int SpikePreTrain { get => _mlParams.SpikePreTrain; set => _mlParams.SpikePreTrain = value; }
+    public int ChangePreTrain
+    {
+        get => _mlParams.ChangePreTrain;
+        set
+        {
+            _mlParams.ChangePreTrain = value;
+            ReconfigureAdaptiveSettings();
+        }
+    }
+    public int SpikePreTrain
+    {
+        get => _mlParams.SpikePreTrain;
+        set
+        {
+            _mlParams.SpikePreTrain = value;
+            ReconfigureAdaptiveSettings();
+        }
+    }
     public MonitorMLService(ILogger<MonitorMLService> logger, IMonitorMLDataRepo monitorMLDataRepo, IMLModelFactory mlModelFactory, IRabbitRepo rabbitRepo, ISystemParamsHelper systemParamsHelper)
     {
         _logger = logger;
@@ -69,7 +94,62 @@ public class MonitorMLService : IMonitorMLService
         _rabbitRepo = rabbitRepo;
         _systemParams = systemParamsHelper.GetSystemParams();
         _mlParams = systemParamsHelper.GetMLParams();
+        _windowManager = new AdaptiveWindowManager(BuildAdaptiveSettings(), logger);
+        ReconfigureAdaptiveSettings();
         Init().Wait();
+    }
+    private AdaptiveWindowManager.AdaptiveWindowSettings BuildAdaptiveSettings()
+    {
+        int changeMax = Math.Max(_mlParams.PredictWindow, _mlParams.ChangePreTrain + 1);
+        int spikeMax = Math.Max(_mlParams.PredictWindow, _mlParams.SpikePreTrain + 1);
+
+        int changeMin = Math.Max(40, _mlParams.ChangePreTrain + 1);
+        if (changeMin >= changeMax)
+            changeMin = Math.Max(_mlParams.ChangePreTrain + 1, changeMax - 1);
+
+        int spikeMin = Math.Max(20, _mlParams.SpikePreTrain + 1);
+        if (spikeMin >= spikeMax)
+            spikeMin = Math.Max(_mlParams.SpikePreTrain + 1, spikeMax - 1);
+
+        int changeStep = Math.Max(5, (changeMax - changeMin) / 6);
+        if (changeStep == 0) changeStep = 5;
+
+        int spikeStep = Math.Max(5, (spikeMax - spikeMin) / 6);
+        if (spikeStep == 0) spikeStep = 5;
+
+        int changePreTrainMin = Math.Max(15, _mlParams.ChangePreTrain / 2);
+        changePreTrainMin = Math.Min(changePreTrainMin, _mlParams.ChangePreTrain);
+        int spikePreTrainMin = Math.Max(10, _mlParams.SpikePreTrain / 2);
+        spikePreTrainMin = Math.Min(spikePreTrainMin, _mlParams.SpikePreTrain);
+
+        int changePreTrainStep = Math.Max(1, (_mlParams.ChangePreTrain - changePreTrainMin) / 2);
+        if (changePreTrainStep < 5) changePreTrainStep = 5;
+        int spikePreTrainStep = Math.Max(1, (_mlParams.SpikePreTrain - spikePreTrainMin) / 2);
+        if (spikePreTrainStep < 5) spikePreTrainStep = 5;
+
+        return new AdaptiveWindowManager.AdaptiveWindowSettings(
+            MaxChangeWindow: changeMax,
+            MaxSpikeWindow: spikeMax,
+            MinChangeWindow: changeMin,
+            MinSpikeWindow: spikeMin,
+            ChangeStep: changeStep,
+            SpikeStep: spikeStep,
+            ChangePreTrainMax: _mlParams.ChangePreTrain,
+            SpikePreTrainMax: _mlParams.SpikePreTrain,
+            ChangePreTrainMin: changePreTrainMin,
+            SpikePreTrainMin: spikePreTrainMin,
+            ChangePreTrainStep: changePreTrainStep,
+            SpikePreTrainStep: spikePreTrainStep,
+            GrowMartingale: 1.05,
+            ShrinkMartingale: 1.03,
+            GrowBoostThreshold: 0.05,
+            ShrinkBoostThreshold: 0.03,
+            AlertCooldown: TimeSpan.FromMinutes(10));
+    }
+
+    private void ReconfigureAdaptiveSettings()
+    {
+        _windowManager?.ApplySettings(BuildAdaptiveSettings());
     }
     public async Task Init()
     {
@@ -90,6 +170,11 @@ public class MonitorMLService : IMonitorMLService
         if (!_models.ContainsKey(key))
         {
             await GetOrCreateModel(monitorIPID, modelType, confidence, preTrain);
+        }
+        if (_models.TryGetValue(key, out var model) && model is TimesFmRabbitModel tfModel)
+        {
+            tfModel.PreTrain = preTrain;
+            tfModel.Confidence = confidence;
         }
     }
     private async Task<IMLModel> GetOrCreateModel(int monitorIPID, string modelType, double confidence, int preTrain)
@@ -127,6 +212,15 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task<ResultObj> CheckLatestHosts()
     {
+        if (_isRunning)
+        {
+            _logger.LogWarning("CheckLatestHosts call ignored because a run is already in progress");
+            return new ResultObj
+            {
+                Success = false,
+                Message = "Predict service busy; skipping duplicate run"
+            };
+        }
          await PublishRepo.PredictReady(_logger, _rabbitRepo, false);
         TResultObj<List<TResultObj<(DetectionResult changeResult, DetectionResult SpikeResult)>>> testResult = await CheckLatestHostsTest();
         var result = new ResultObj();
@@ -137,6 +231,16 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task<TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>> CheckLatestHostsTest()
     {
+        if (_isRunning)
+        {
+            _logger.LogWarning("CheckLatestHostsTest call ignored because a run is already in progress");
+            return new TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>()
+            {
+                Success = false,
+                Message = "Predict service busy; skipping duplicate run",
+                Data = new List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>()
+            };
+        }
         TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>> result = new TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>();
         result.Message = " SERVICE : CheckLatestHosts : ";
         result.Success = true;
@@ -194,11 +298,18 @@ public class MonitorMLService : IMonitorMLService
             int dataSetID = monitorPingInfo.DataSetID;
             var changeDetectionResult = await InitChangeDetection(monitorPingInfo);
             var spikeDetectionResult = await InitSpikeDetection(monitorPingInfo);
+            var updateTimestamp = monitorPingInfo.DateEnded ?? DateTime.UtcNow;
+            var windowConfig = _windowManager.Update(
+                monitorIPID,
+                new AdaptiveWindowManager.DetectionSnapshot(changeDetectionResult.IsIssueDetected, changeDetectionResult.NumberOfDetections, changeDetectionResult.MaxMartingaleValue),
+                new AdaptiveWindowManager.DetectionSnapshot(spikeDetectionResult.IsIssueDetected, spikeDetectionResult.NumberOfDetections, spikeDetectionResult.MaxMartingaleValue),
+                updateTimestamp);
             var combinedAnalysis = AnalyzeResults(changeDetectionResult, spikeDetectionResult);
             result.Success = changeDetectionResult.Result.Success && spikeDetectionResult.Result.Success;
             result.Message = combinedAnalysis;
             result.Data = (changeDetectionResult, spikeDetectionResult);
             _logger.LogDebug($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
+            _logger.LogDebug("Adaptive windows after run monitor={Monitor} changeWindow={ChangeWindow} spikeWindow={SpikeWindow}", monitorIPID, windowConfig.ChangeWindow, windowConfig.SpikeWindow);
             var predictStatus = monitorPingInfo.PredictStatus;
             if (predictStatus == null)
             {
@@ -357,12 +468,17 @@ public class MonitorMLService : IMonitorMLService
         var detectionResult = new DetectionResult();
         try
         {
+            if (TryReuseLatchedDetection(monitorPingInfo, isChange: true, out var latched))
+                return latched;
             if (!CheckMonitorPingInfoOK(monitorPingInfo, monitorIPID, detectionResult))
             {
                 return detectionResult;
             }
             var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
-            await EnsureModelInitialized(monitorIPID, "Change", _mlParams.ChangeConfidence, ChangePreTrain);
+            var config = _windowManager.GetConfig(monitorIPID);
+            _logger.LogDebug("Window config before change detection monitor={Monitor} changeWindow={ChangeWindow} changePreTrain={ChangePreTrain} spikeWindow={SpikeWindow} spikePreTrain={SpikePreTrain}", monitorIPID, config.ChangeWindow, config.ChangePreTrain, config.SpikeWindow, config.SpikePreTrain);
+            localPingInfos = TrimWindow(localPingInfos, config.ChangeWindow, config.MaxChangeWindow, config.ChangePreTrain);
+            await EnsureModelInitialized(monitorIPID, "Change", _mlParams.ChangeConfidence, config.ChangePreTrain);
             //_mlModel = _mlModelFactory.CreateModel("Change", monitorPingInfo!.ID, 90d);
             //_mlModel.Train(localPingInfos);
             detectionResult = PredictForHostChange(localPingInfos, monitorIPID);
@@ -382,15 +498,28 @@ public class MonitorMLService : IMonitorMLService
         var detectionResult = new DetectionResult();
         try
         {
+            if (TryReuseLatchedDetection(monitorPingInfo, isChange: false, out var latched))
+                return latched;
             if (!CheckMonitorPingInfoOK(monitorPingInfo, monitorIPID, detectionResult))
             {
                 return detectionResult;
             }
-            var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
-            await EnsureModelInitialized(monitorIPID, "Spike", _mlParams.SpikeConfidence, SpikePreTrain);
-            //_mlModel = _mlModelFactory.CreateModel("Spike", monitorPingInfo!.ID, 99d);
-            //_mlModel.Train(localPingInfos);
-            detectionResult = PredictForHostSpike(localPingInfos, monitorIPID);
+            var originalLocalPingInfos = GetLocalPingInfos(monitorPingInfo!);
+            var config = _windowManager.GetConfig(monitorIPID);
+            _logger.LogDebug("Window config before spike detection monitor={Monitor} changeWindow={ChangeWindow} changePreTrain={ChangePreTrain} spikeWindow={SpikeWindow} spikePreTrain={SpikePreTrain}", monitorIPID, config.ChangeWindow, config.ChangePreTrain, config.SpikeWindow, config.SpikePreTrain);
+            var trimmedLocalPingInfos = TrimWindow(originalLocalPingInfos, config.SpikeWindow, config.MaxSpikeWindow, config.SpikePreTrain);
+            await EnsureModelInitialized(monitorIPID, "Spike", _mlParams.SpikeConfidence, config.SpikePreTrain);
+            detectionResult = PredictForHostSpike(trimmedLocalPingInfos, monitorIPID);
+
+            bool trimmedApplied = trimmedLocalPingInfos.Count != originalLocalPingInfos.Count;
+            if (!detectionResult.IsIssueDetected
+                && detectionResult.NumberOfDetections > 0
+                && trimmedApplied
+                && config.SpikeWindow < config.MaxSpikeWindow)
+            {
+                await EnsureModelInitialized(monitorIPID, "Spike", _mlParams.SpikeConfidence, _mlParams.SpikePreTrain);
+                detectionResult = PredictForHostSpike(originalLocalPingInfos, monitorIPID);
+            }
             _logger.LogDebug($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
         }
         catch (Exception e)
@@ -409,6 +538,56 @@ public class MonitorMLService : IMonitorMLService
             RoundTripTime = (ushort)(pi.RoundTripTime ?? 0),
             StatusID = pi.StatusID
         }).ToList();
+    }
+    private static List<LocalPingInfo> TrimWindow(List<LocalPingInfo> source, int windowSize, int maxWindow, int preTrain)
+    {
+        if (windowSize >= maxWindow || source.Count <= windowSize)
+            return source;
+        int desired = Math.Max(windowSize, Math.Min(source.Count, windowSize + Math.Max(preTrain, windowSize / 2)));
+        desired = Math.Min(source.Count, desired);
+        int start = source.Count - desired;
+        return source.GetRange(start, desired);
+    }
+
+    private bool TryReuseLatchedDetection(MonitorPingInfo monitorPingInfo, bool isChange, out DetectionResult detectionResult)
+    {
+        var status = monitorPingInfo.PredictStatus;
+        if (status?.AlertSent == true)
+        {
+            var cached = isChange ? status.ChangeDetectionResult : status.SpikeDetectionResult;
+            detectionResult = cached != null ? CloneDetectionResult(cached) : new DetectionResult
+            {
+                IsIssueDetected = true,
+                NumberOfDetections = 1,
+                Result = { Success = true }
+            };
+            detectionResult.Result.Success = true;
+            detectionResult.Result.Message = "Skipped run: alert already sent";
+            _logger.LogDebug("Skipping {Mode} detection for monitor {Monitor} because AlertSent is true", isChange ? "change" : "spike", monitorPingInfo.MonitorIPID);
+            return true;
+        }
+
+        detectionResult = null!;
+        return false;
+    }
+
+    private static DetectionResult CloneDetectionResult(DetectionResult source)
+    {
+        return new DetectionResult
+        {
+            IsIssueDetected = source.IsIssueDetected,
+            NumberOfDetections = source.NumberOfDetections,
+            IsDataLimited = source.IsDataLimited,
+            AverageScore = source.AverageScore,
+            MinPValue = source.MinPValue,
+            MaxMartingaleValue = source.MaxMartingaleValue,
+            IndexOfFirstDetection = source.IndexOfFirstDetection,
+            Result = new ResultObj
+            {
+                Success = source.Result.Success,
+                Message = source.Result.Message
+            }
+        };
     }
     public async Task<List<LocalPingInfo>> TrainForHost(int monitorIPID)
     {

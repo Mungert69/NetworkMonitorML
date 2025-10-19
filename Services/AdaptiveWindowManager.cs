@@ -108,12 +108,14 @@ internal sealed class AdaptiveWindowManager
     {
         return _states.GetOrAdd(monitorId, _ =>
         {
+            int changeStart = Math.Clamp(75, _settings.MinChangeWindow, _settings.MaxChangeWindow);
+            int spikeStart = Math.Clamp(70, _settings.MinSpikeWindow, _settings.MaxSpikeWindow);
             var state = new WindowState
             {
-                ChangeWindow = _settings.MaxChangeWindow,
-                SpikeWindow = _settings.MaxSpikeWindow,
-                ChangePreTrain = Math.Min(_settings.ChangePreTrainMax, _settings.MaxChangeWindow - 1),
-                SpikePreTrain = Math.Min(_settings.SpikePreTrainMax, _settings.MaxSpikeWindow - 1)
+                ChangeWindow = changeStart,
+                SpikeWindow = spikeStart,
+                ChangePreTrain = Math.Min(_settings.ChangePreTrainMax, Math.Max(changeStart - 1, _settings.ChangePreTrainMin)),
+                SpikePreTrain = Math.Min(_settings.SpikePreTrainMax, Math.Max(spikeStart - 1, _settings.SpikePreTrainMin))
             };
             state.ChangePreTrain = Math.Max(_settings.ChangePreTrainMin, Math.Min(state.ChangePreTrain, state.ChangeWindow - 1));
             state.SpikePreTrain = Math.Max(_settings.SpikePreTrainMin, Math.Min(state.SpikePreTrain, state.SpikeWindow - 1));

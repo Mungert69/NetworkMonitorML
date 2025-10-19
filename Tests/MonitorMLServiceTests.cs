@@ -243,6 +243,52 @@ namespace NetworkMonitor.MonitorML.Tests
         }
 
 
-    }
+    
 
+        [Fact]
+        public async Task CheckHost_SkipsDetectionWhenAlertLatched()
+        {
+            int monitorIPID = 99;
+            int dataSetID = 0;
+            var mockMonitorPingInfo = MonitorMLTestData.GenerateDataWithSpikeAndChange(monitorIPID, dataSetID);
+            mockMonitorPingInfo.PredictStatus ??= new PredictStatus();
+            mockMonitorPingInfo.PredictStatus.AlertSent = true;
+            mockMonitorPingInfo.PredictStatus.ChangeDetectionResult = new DetectionResult
+            {
+                IsIssueDetected = true,
+                NumberOfDetections = 1,
+                MaxMartingaleValue = 2.0,
+                Result = new ResultObj { Success = true, Message = "cached change" }
+            };
+            mockMonitorPingInfo.PredictStatus.SpikeDetectionResult = new DetectionResult
+            {
+                IsIssueDetected = true,
+                NumberOfDetections = 4,
+                MaxMartingaleValue = 2.0,
+                Result = new ResultObj { Success = true, Message = "cached spike" }
+            };
+
+            var systemParams = MonitorMLTestData.GetSystemParams();
+            var mlParams = MonitorMLTestData.GetMLParams();
+            _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+            _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
+
+            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>(), dataSetID))
+                                  .ReturnsAsync(mockMonitorPingInfo);
+
+            _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
+                                  .ReturnsAsync(new ResultObj());
+
+            IMLModelFactory mlModelFactory = new MLModelFactory();
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object);
+
+            var result = await service.CheckHost(monitorIPID, dataSetID);
+
+            Assert.True(result.Success);
+            Assert.Contains("Skipped", result.Data.ChangeResult.Result.Message);
+            Assert.Contains("Skipped", result.Data.SpikeResult.Result.Message);
+            Assert.Contains("Skipped", mockMonitorPingInfo.PredictStatus.ChangeDetectionResult.Result.Message);
+            Assert.Contains("Skipped", mockMonitorPingInfo.PredictStatus.SpikeDetectionResult.Result.Message);
+        }
+    }
 }
