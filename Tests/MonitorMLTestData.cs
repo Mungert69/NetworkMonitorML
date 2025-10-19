@@ -191,7 +191,7 @@ public class MonitorMLTestData
     }
     public static MLParams GetMLParams()
     {
-        return new MLParams
+        var mlParams = new MLParams
         {
             PredictWindow = 50,
             SpikeDetectionThreshold = 2,
@@ -200,6 +200,25 @@ public class MonitorMLTestData
             ChangePreTrain = 20,
             SpikePreTrain = 20
         };
+
+        mlParams.ActiveModelParameters = new ResolvedModelParameters
+        {
+            ChangeConfidence = mlParams.ChangeConfidence,
+            SpikeConfidence = mlParams.SpikeConfidence,
+            ChangePreTrain = mlParams.ChangePreTrain,
+            SpikePreTrain = mlParams.SpikePreTrain,
+            PredictWindow = mlParams.PredictWindow,
+            SpikeDetectionThreshold = mlParams.SpikeDetectionThreshold,
+            TimesFmChangeSettings = new TimesFmResolvedSettings(),
+            TimesFmSpikeSettings = new TimesFmResolvedSettings
+            {
+                RunLength = 1,
+                KOfNK = 1,
+                KOfNN = 6
+            }
+        };
+
+        return mlParams;
     }
     public static List<ProcessorObj> GetProcesorList()
     {

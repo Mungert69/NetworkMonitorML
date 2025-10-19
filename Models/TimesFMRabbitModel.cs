@@ -125,7 +125,29 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         if (inputs == null || inputs.Count == 0)
             return Array.Empty<AnomalyPrediction>();
 
-        var rtts = inputs.Select(x => (double)x.RoundTripTime).ToArray();
+        var allPreds = new AnomalyPrediction[inputs.Count];
+        for (int i = 0; i < allPreds.Length; i++)
+        {
+            // Neutral placeholders keep alignment but reset any post-processing streak logic.
+            // If you need consecutive-detection logic, implement it before we reinsert timeouts.
+            allPreds[i] = AnomalyPrediction.Neutral();
+        }
+
+        var goodIndices = new List<int>(inputs.Count);
+        var goodValues = new List<double>(inputs.Count);
+        for (int i = 0; i < inputs.Count; i++)
+        {
+            if (!inputs[i].IsTimeout())
+            {
+                goodIndices.Add(i);
+                goodValues.Add(inputs[i].RoundTripTime);
+            }
+        }
+
+        if (goodIndices.Count == 0)
+            return allPreds;
+
+        var rtts = goodValues.ToArray();
         var n = rtts.Length;
 
         // Reset martingale per evaluation window for sane, comparable telemetry
@@ -134,10 +156,14 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
         var preds = new List<AnomalyPrediction>(n);
         for (int i = 0; i < Math.Min(PreTrain, n); i++)
-            preds.Add(new AnomalyPrediction { Prediction = new double[] { 0, 0, 0.5, 1.0 } });
+            preds.Add(AnomalyPrediction.Neutral());
 
         if (n <= PreTrain)
-            return preds;
+        {
+            for (int k = 0; k < goodIndices.Count; k++)
+                allPreds[goodIndices[k]] = preds[k];
+            return allPreds;
+        }
 
         // Rolling prefixes: horizon=1
         var batchSeries = new List<List<double>>(n - PreTrain);
@@ -417,7 +443,10 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
                 _log.LogInformation("timesfm sample type={Type} {Line}", _modelType, line);
         }
 
-        return preds;
+        for (int k = 0; k < goodIndices.Count; k++)
+            allPreds[goodIndices[k]] = preds[k];
+
+        return allPreds;
     }
 
     public void PrintPrediction(IEnumerable<AnomalyPrediction> predictions)

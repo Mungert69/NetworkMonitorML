@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.TimeSeries;
@@ -88,24 +89,65 @@ namespace NetworkMonitor.ML.Model
 
             public IEnumerable<AnomalyPrediction> GetDeviations(IEnumerable<LocalPingInfo> inputs)
             {
+                var list = inputs.ToList();
+                if (list.Count == 0)
+                    return Array.Empty<AnomalyPrediction>();
+
+                var map = new int[list.Count];
+                var filtered = new List<LocalPingInfo>(list.Count);
+
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (list[i].IsTimeout())
+                    {
+                        map[i] = -1;
+                    }
+                    else
+                    {
+                        map[i] = filtered.Count;
+                        filtered.Add(list[i]);
+                    }
+                }
+
+                var expanded = new AnomalyPrediction[list.Count];
+                for (int i = 0; i < expanded.Length; i++)
+                {
+                    // Neutral placeholders keep alignment but reset any post-processing streak logic.
+                    // If you need consecutive-detection logic, implement it before we reinsert timeouts.
+                    expanded[i] = AnomalyPrediction.Neutral();
+                }
+
+                if (filtered.Count == 0)
+                    return expanded;
+
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
 
-                var iidSpikeEstimator = _mlContext.Transforms.DetectIidSpike(outputColumnName, inputColumnName, confidence: _confidence, pvalueHistoryLength : _preTrain);
+                var iidSpikeEstimator = _mlContext.Transforms.DetectIidSpike(outputColumnName, inputColumnName, confidence: _confidence, pvalueHistoryLength: _preTrain);
 
                 var emptyDataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
                 var iidSpikeTransform = iidSpikeEstimator.Fit(emptyDataView);
 
-                var dataView = _mlContext.Data.LoadFromEnumerable(inputs);
+                var dataView = _mlContext.Data.LoadFromEnumerable(filtered);
                 IDataView transformedData = iidSpikeTransform.Transform(dataView);
-                var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false);
+                var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false).ToList();
                 _mlContext.Model.Save(iidSpikeTransform, emptyDataView.Schema, _modelPath);
     
-                return predictions;
+                for (int i = 0; i < map.Length; i++)
+                {
+                    int idx = map[i];
+                    if (idx >= 0 && idx < predictions.Count)
+                        expanded[i] = predictions[idx];
+                }
+
+                return expanded;
             }
 
             public AnomalyPrediction GetDeviation(LocalPingInfo input)
             {
+                if (input.IsTimeout())
+                    return AnomalyPrediction.Neutral();
+
                 var file = File.OpenRead(_modelPath);
                 var model = _mlContext.Model.Load(file, out DataViewSchema schema);
                 var engine = model.CreateTimeSeriesEngine<LocalPingInfo, AnomalyPrediction>(_mlContext);

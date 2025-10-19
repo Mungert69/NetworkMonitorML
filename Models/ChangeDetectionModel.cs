@@ -107,38 +107,63 @@ namespace NetworkMonitor.ML.Model
 
             public IEnumerable<AnomalyPrediction> GetDeviations(IEnumerable<LocalPingInfo> inputs)
             {
+                var list = inputs.ToList();
+                if (list.Count == 0)
+                    return Array.Empty<AnomalyPrediction>();
 
-                /* Load the model.
-                var file = File.OpenRead(_modelPath);
-                var model = _mlContext.Model.Load(file, out DataViewSchema schema);
-                var engine = model.CreateTimeSeriesEngine<LocalPingInfo,
-                   AnomalyPrediction>(_mlContext);
-                int k = 0;
-                var deviations = new List<float>();
-                foreach (var input in inputs)
+                var map = new int[list.Count];
+                var filtered = new List<LocalPingInfo>(list.Count);
+
+                for (int i = 0; i < list.Count; i++)
                 {
-                    var prediction = engine.Predict(input);
-                   
-                    Display.PrintPrediction(k, input.RoundTripTime, prediction);
-                    k++;
-                }*/
+                    if (list[i].IsTimeout())
+                    {
+                        map[i] = -1;
+                    }
+                    else
+                    {
+                        map[i] = filtered.Count;
+                        filtered.Add(list[i]);
+                    }
+                }
+
+                var expanded = new AnomalyPrediction[list.Count];
+                for (int i = 0; i < expanded.Length; i++)
+                {
+                    // Neutral placeholders keep alignment but reset any post-processing streak logic.
+                    // If you need consecutive-detection logic, implement it before we reinsert timeouts.
+                    expanded[i] = AnomalyPrediction.Neutral();
+                }
+
+                if (filtered.Count == 0)
+                    return expanded;
+
                 string outputColumnName = nameof(AnomalyPrediction.Prediction);
                 string inputColumnName = nameof(LocalPingInfo.RoundTripTime);
 
                 var iidChangePointEstimator = _mlContext.Transforms.DetectIidChangePoint(outputColumnName, inputColumnName, confidence: _confidence, changeHistoryLength: _preTrain);
 
-                //var emptyDataView = _mlContext.Data.LoadFromEnumerable(new List<LocalPingInfo>());
-                var dataView = _mlContext.Data.LoadFromEnumerable(inputs);
+                var dataView = _mlContext.Data.LoadFromEnumerable(filtered);
                 var iidChangePointTransform = iidChangePointEstimator.Fit(dataView);
                 IDataView transformedData = iidChangePointTransform.Transform(dataView);
-                var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false);
+                var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false).ToList();
                 _mlContext.Model.Save(iidChangePointTransform, dataView.Schema, _modelPath);
-    
-                return predictions;
+
+                for (int i = 0; i < map.Length; i++)
+                {
+                    int idx = map[i];
+                    if (idx >= 0 && idx < predictions.Count)
+                        expanded[i] = predictions[idx];
+                }
+
+                return expanded;
             }
 
             public AnomalyPrediction GetDeviation(LocalPingInfo input)
             {
+                if (input.IsTimeout())
+                    return AnomalyPrediction.Neutral();
+
                 // Load the model.
                 var file = File.OpenRead(_modelPath);
                 var model = _mlContext.Model.Load(file, out DataViewSchema schema);

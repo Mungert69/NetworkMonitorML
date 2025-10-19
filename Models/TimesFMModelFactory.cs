@@ -1,4 +1,5 @@
 // File: ML/TimesFmModelFactory.cs
+using System;
 using Microsoft.Extensions.Logging;
 using NetworkMonitor.ML.Model;
 using NetworkMonitor.Objects.Factory;
@@ -29,7 +30,9 @@ public sealed class TimesFmModelFactory : IMLModelFactory
     public IMLModel CreateModel(string modelType, int monitorPingInfoID, double confidence, int preTrain)
     {
         var log = _lf.CreateLogger<TimesFmRabbitModel>();
-        // both "change" and "spike" use the same adapter; service logic differs later
+        var baseSettings = string.Equals(modelType, "change", StringComparison.OrdinalIgnoreCase)
+            ? _mlParams.ActiveModelParameters.TimesFmChangeSettings.Clone()
+            : _mlParams.ActiveModelParameters.TimesFmSpikeSettings.Clone();
         return new TimesFmRabbitModel(
             _rabbitRepo,
             _sys,
@@ -39,6 +42,6 @@ public sealed class TimesFmModelFactory : IMLModelFactory
             preTrain,
             modelType,
             _routingKey,
-            _mlParams.ActiveModelParameters.TimesFmSettings);
+            baseSettings);
     }
 }

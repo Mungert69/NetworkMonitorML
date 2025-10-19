@@ -113,20 +113,20 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
 - **PredictWindow** – maximum number of samples fetched for each run. Bigger windows retain more context; smaller windows reduce compute.
 - **SpikeDetectionThreshold** – post-processing guard that requires at least N spike detections before the service marks a spike incident.
 
-### TimesFM-only settings (`TimesFmSettings`)
+### TimesFM-only settings
 
-- **RunLength** – minimum consecutive band breaches before a change can fire. Increase to reduce false positives from single outliers.
-- **KOfNK / KOfNN** – persistence gate: at least `KOfNK` of the last `KOfNN` samples must be outside the band. Tune these to balance responsiveness vs. stability.
-- **MadAlpha** – multiples of the rolling sigma added to the band. Higher values widen bands (fewer alerts); lower values tighten them (more alerts).
-- **MinBandAbs** – absolute minimum band width in milliseconds. Prevents bands collapsing on calm series; raise it if you want to ignore small jitter entirely.
-- **MinBandRel** – minimum band width relative to the forecast magnitude. Useful when latency scales with load; higher values reduce proportional alerts.
-- **RollSigmaWindow** – lookback window for sigma estimation. Larger windows smooth volatility; smaller windows react faster to variance changes.
-- **BaselineWindow** – window for the median/MAD baseline used in the magnitude gate. Longer windows resist drift; shorter windows adapt sooner.
-- **SigmaCooldown** – number of samples to freeze sigma after a confirmed change, preventing immediate re-triggering while the system stabilises.
-- **MinRelShift** – minimum relative deviation (vs. baseline) required in addition to persistence. Higher values demand bigger percentage shifts before alerting.
-- **SampleRows** – number of diagnostic rows logged per batch (first few and last few samples). Raising it increases observability cost but not detection behaviour.
-- **NearMissFraction** – fraction of the band considered a “near miss” for logging and counts. Lower values only record points very close to the edge.
-- **LogJson** – when true, logs structured JSON samples; set to false for terse text output.
+TimesFM now lets you tailor change and spike behaviour separately. Each profile has the following knobs:
+
+- **RunLength** – minimum consecutive band breaches before the detector fires. Increase to require more persistence; drop to `1` for immediate alerts.
+- **KOfNK / KOfNN** – secondary persistence gate (k-of-n). Useful for smoothing bursts without demanding full run-length.
+- **MadAlpha** – multiples of rolling sigma added to the band. Higher values widen the band (fewer alerts); smaller values tighten it.
+- **MinBandAbs / MinBandRel** – absolute and relative floor for band width so jitter doesn’t collapse thresholds.
+- **RollSigmaWindow / BaselineWindow** – lookback windows for sigma and baseline median/MAD. Longer windows smooth volatility; shorter windows adapt faster.
+- **SigmaCooldown** – how long to freeze sigma after a confirmed change to avoid immediate retriggers.
+- **MinRelShift** – minimum relative deviation (vs. baseline) required in addition to persistence.
+- **SampleRows / NearMissFraction / LogJson** – logging controls for the diagnostics payload.
+
+Configure shared defaults under `TimesFmSettings`, and override per mode with `TimesFmChangeSettings` and `TimesFmSpikeSettings` inside each model entry.
 
 Because `MonitorMLService` replays settings on every reuse, you can adjust the config and restart the service to adopt new thresholds without code changes.
 

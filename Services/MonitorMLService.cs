@@ -103,31 +103,17 @@ public class MonitorMLService : IMonitorMLService
 
     private ResolvedModelParameters ResolveParameters(MonitorModelConfig? hostConfig)
     {
-        var baselineTimesFm = _mlParams.ActiveModelParameters.TimesFmSettings;
+        var baseline = _mlParams.ActiveModelParameters;
         var resolved = new ResolvedModelParameters
         {
-            ChangeConfidence = _mlParams.ChangeConfidence,
-            SpikeConfidence = _mlParams.SpikeConfidence,
-            ChangePreTrain = _mlParams.ChangePreTrain,
-            SpikePreTrain = _mlParams.SpikePreTrain,
-            PredictWindow = _mlParams.PredictWindow,
-            SpikeDetectionThreshold = _mlParams.SpikeDetectionThreshold,
-            TimesFmSettings = new TimesFmResolvedSettings
-            {
-                RunLength = baselineTimesFm.RunLength,
-                KOfNK = baselineTimesFm.KOfNK,
-                KOfNN = baselineTimesFm.KOfNN,
-                MadAlpha = baselineTimesFm.MadAlpha,
-                MinBandAbs = baselineTimesFm.MinBandAbs,
-                MinBandRel = baselineTimesFm.MinBandRel,
-                RollSigmaWindow = baselineTimesFm.RollSigmaWindow,
-                BaselineWindow = baselineTimesFm.BaselineWindow,
-                SigmaCooldown = baselineTimesFm.SigmaCooldown,
-                MinRelShift = baselineTimesFm.MinRelShift,
-                SampleRows = baselineTimesFm.SampleRows,
-                NearMissFraction = baselineTimesFm.NearMissFraction,
-                LogJson = baselineTimesFm.LogJson
-            }
+            ChangeConfidence = baseline.ChangeConfidence,
+            SpikeConfidence = baseline.SpikeConfidence,
+            ChangePreTrain = baseline.ChangePreTrain,
+            SpikePreTrain = baseline.SpikePreTrain,
+            PredictWindow = baseline.PredictWindow,
+            SpikeDetectionThreshold = baseline.SpikeDetectionThreshold,
+            TimesFmChangeSettings = baseline.TimesFmChangeSettings.Clone(),
+            TimesFmSpikeSettings = baseline.TimesFmSpikeSettings.Clone()
         };
 
         if (hostConfig == null)
@@ -146,35 +132,103 @@ public class MonitorMLService : IMonitorMLService
         if (hostConfig.SpikeDetectionThreshold.HasValue)
             resolved.SpikeDetectionThreshold = hostConfig.SpikeDetectionThreshold.Value;
 
-        var ts = resolved.TimesFmSettings;
-        if (hostConfig.RunLength.HasValue)
-            ts.RunLength = hostConfig.RunLength.Value;
-        if (hostConfig.KOfNK.HasValue)
-            ts.KOfNK = hostConfig.KOfNK.Value;
-        if (hostConfig.KOfNN.HasValue)
-            ts.KOfNN = hostConfig.KOfNN.Value;
-        if (hostConfig.MadAlpha.HasValue)
-            ts.MadAlpha = hostConfig.MadAlpha.Value;
-        if (hostConfig.MinBandAbs.HasValue)
-            ts.MinBandAbs = hostConfig.MinBandAbs.Value;
-        if (hostConfig.MinBandRel.HasValue)
-            ts.MinBandRel = hostConfig.MinBandRel.Value;
-        if (hostConfig.RollSigmaWindow.HasValue)
-            ts.RollSigmaWindow = hostConfig.RollSigmaWindow.Value;
-        if (hostConfig.BaselineWindow.HasValue)
-            ts.BaselineWindow = hostConfig.BaselineWindow.Value;
-        if (hostConfig.SigmaCooldown.HasValue)
-            ts.SigmaCooldown = hostConfig.SigmaCooldown.Value;
-        if (hostConfig.MinRelShift.HasValue)
-            ts.MinRelShift = hostConfig.MinRelShift.Value;
-        if (hostConfig.SampleRows.HasValue)
-            ts.SampleRows = hostConfig.SampleRows.Value;
-        if (hostConfig.NearMissFraction.HasValue)
-            ts.NearMissFraction = hostConfig.NearMissFraction.Value;
-        if (hostConfig.LogJson.HasValue)
-            ts.LogJson = hostConfig.LogJson.Value;
+        void ApplySharedTimesFmSettings(TimesFmResolvedSettings target)
+        {
+            if (hostConfig.RunLength.HasValue)
+                target.RunLength = hostConfig.RunLength.Value;
+            if (hostConfig.KOfNK.HasValue)
+                target.KOfNK = hostConfig.KOfNK.Value;
+            if (hostConfig.KOfNN.HasValue)
+                target.KOfNN = hostConfig.KOfNN.Value;
+            if (hostConfig.MadAlpha.HasValue)
+                target.MadAlpha = hostConfig.MadAlpha.Value;
+            if (hostConfig.MinBandAbs.HasValue)
+                target.MinBandAbs = hostConfig.MinBandAbs.Value;
+            if (hostConfig.MinBandRel.HasValue)
+                target.MinBandRel = hostConfig.MinBandRel.Value;
+            if (hostConfig.RollSigmaWindow.HasValue)
+                target.RollSigmaWindow = hostConfig.RollSigmaWindow.Value;
+            if (hostConfig.BaselineWindow.HasValue)
+                target.BaselineWindow = hostConfig.BaselineWindow.Value;
+            if (hostConfig.SigmaCooldown.HasValue)
+                target.SigmaCooldown = hostConfig.SigmaCooldown.Value;
+            if (hostConfig.MinRelShift.HasValue)
+                target.MinRelShift = hostConfig.MinRelShift.Value;
+            if (hostConfig.SampleRows.HasValue)
+                target.SampleRows = hostConfig.SampleRows.Value;
+            if (hostConfig.NearMissFraction.HasValue)
+                target.NearMissFraction = hostConfig.NearMissFraction.Value;
+            if (hostConfig.LogJson.HasValue)
+                target.LogJson = hostConfig.LogJson.Value;
+        }
 
-        resolved.TimesFmSettings = ts;
+        void ApplyModeSpecificTimesFmSettings(TimesFmResolvedSettings target, bool isChange)
+        {
+            if (isChange)
+            {
+                if (hostConfig.ChangeRunLength.HasValue)
+                    target.RunLength = hostConfig.ChangeRunLength.Value;
+                if (hostConfig.ChangeKOfNK.HasValue)
+                    target.KOfNK = hostConfig.ChangeKOfNK.Value;
+                if (hostConfig.ChangeKOfNN.HasValue)
+                    target.KOfNN = hostConfig.ChangeKOfNN.Value;
+                if (hostConfig.ChangeMadAlpha.HasValue)
+                    target.MadAlpha = hostConfig.ChangeMadAlpha.Value;
+                if (hostConfig.ChangeMinBandAbs.HasValue)
+                    target.MinBandAbs = hostConfig.ChangeMinBandAbs.Value;
+                if (hostConfig.ChangeMinBandRel.HasValue)
+                    target.MinBandRel = hostConfig.ChangeMinBandRel.Value;
+                if (hostConfig.ChangeRollSigmaWindow.HasValue)
+                    target.RollSigmaWindow = hostConfig.ChangeRollSigmaWindow.Value;
+                if (hostConfig.ChangeBaselineWindow.HasValue)
+                    target.BaselineWindow = hostConfig.ChangeBaselineWindow.Value;
+                if (hostConfig.ChangeSigmaCooldown.HasValue)
+                    target.SigmaCooldown = hostConfig.ChangeSigmaCooldown.Value;
+                if (hostConfig.ChangeMinRelShift.HasValue)
+                    target.MinRelShift = hostConfig.ChangeMinRelShift.Value;
+                if (hostConfig.ChangeSampleRows.HasValue)
+                    target.SampleRows = hostConfig.ChangeSampleRows.Value;
+                if (hostConfig.ChangeNearMissFraction.HasValue)
+                    target.NearMissFraction = hostConfig.ChangeNearMissFraction.Value;
+                if (hostConfig.ChangeLogJson.HasValue)
+                    target.LogJson = hostConfig.ChangeLogJson.Value;
+            }
+            else
+            {
+                if (hostConfig.SpikeRunLength.HasValue)
+                    target.RunLength = hostConfig.SpikeRunLength.Value;
+                if (hostConfig.SpikeKOfNK.HasValue)
+                    target.KOfNK = hostConfig.SpikeKOfNK.Value;
+                if (hostConfig.SpikeKOfNN.HasValue)
+                    target.KOfNN = hostConfig.SpikeKOfNN.Value;
+                if (hostConfig.SpikeMadAlpha.HasValue)
+                    target.MadAlpha = hostConfig.SpikeMadAlpha.Value;
+                if (hostConfig.SpikeMinBandAbs.HasValue)
+                    target.MinBandAbs = hostConfig.SpikeMinBandAbs.Value;
+                if (hostConfig.SpikeMinBandRel.HasValue)
+                    target.MinBandRel = hostConfig.SpikeMinBandRel.Value;
+                if (hostConfig.SpikeRollSigmaWindow.HasValue)
+                    target.RollSigmaWindow = hostConfig.SpikeRollSigmaWindow.Value;
+                if (hostConfig.SpikeBaselineWindow.HasValue)
+                    target.BaselineWindow = hostConfig.SpikeBaselineWindow.Value;
+                if (hostConfig.SpikeSigmaCooldown.HasValue)
+                    target.SigmaCooldown = hostConfig.SpikeSigmaCooldown.Value;
+                if (hostConfig.SpikeMinRelShift.HasValue)
+                    target.MinRelShift = hostConfig.SpikeMinRelShift.Value;
+                if (hostConfig.SpikeSampleRows.HasValue)
+                    target.SampleRows = hostConfig.SpikeSampleRows.Value;
+                if (hostConfig.SpikeNearMissFraction.HasValue)
+                    target.NearMissFraction = hostConfig.SpikeNearMissFraction.Value;
+                if (hostConfig.SpikeLogJson.HasValue)
+                    target.LogJson = hostConfig.SpikeLogJson.Value;
+            }
+        }
+
+        ApplySharedTimesFmSettings(resolved.TimesFmChangeSettings);
+        ApplyModeSpecificTimesFmSettings(resolved.TimesFmChangeSettings, isChange: true);
+        ApplySharedTimesFmSettings(resolved.TimesFmSpikeSettings);
+        ApplyModeSpecificTimesFmSettings(resolved.TimesFmSpikeSettings, isChange: false);
+
         return resolved;
     }
 
@@ -285,9 +339,12 @@ public class MonitorMLService : IMonitorMLService
         {
             tfModel.PreTrain = preTrain;
             tfModel.Confidence = confidence;
-            var settings = _hostParameters.TryGetValue(monitorIPID, out var resolved)
-                ? resolved.TimesFmSettings
-                : _mlParams.ActiveModelParameters.TimesFmSettings;
+            var resolved = _hostParameters.TryGetValue(monitorIPID, out var cached)
+                ? cached
+                : _mlParams.ActiveModelParameters;
+            var settings = string.Equals(modelType, "Change", StringComparison.OrdinalIgnoreCase)
+                ? resolved.TimesFmChangeSettings.Clone()
+                : resolved.TimesFmSpikeSettings.Clone();
             tfModel.ApplySettings(settings);
         }
     }
@@ -446,6 +503,7 @@ public class MonitorMLService : IMonitorMLService
                 predictStatus.ChangeDetectionResult = changeDetectionResult;
                 predictStatus.SpikeDetectionResult = spikeDetectionResult;
                 predictStatus.EventTime = monitorPingInfo.DateEnded;
+                predictStatus.AlertFlag = changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected;
                 if (changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected)
                 {
                     //predictStatus.AlertFlag = true;
@@ -500,22 +558,31 @@ public class MonitorMLService : IMonitorMLService
         if (isChangeDetected && isSpikeDetected)
         {
             analysisFeedback += "Possible issues detected. ";
-            if (isChangeDetected)
-            {
-                var datePingInfo = new PingInfo();
-                datePingInfo.DateSentInt = (uint)changeDetectionResult.IndexOfFirstDetection;
-                analysisFeedback += $"Changes detected: first change at {datePingInfo.DateSent} ,number of changes {changeDetectionResult.NumberOfDetections}, Avg Respone Time: {changeDetectionResult.AverageScore:F2}, Certainty score : {changeDetectionResult.MinPValue:F2} (closer to zero is more certain). ";
-            }
-            if (isSpikeDetected)
-            {
-                var datePingInfo = new PingInfo();
-                datePingInfo.DateSentInt = (uint)spikeDetectionResult.IndexOfFirstDetection;
-                analysisFeedback += $"Spikes detected: first spike at {datePingInfo.DateSent}, number of spikes {spikeDetectionResult.NumberOfDetections}, Avg Response Time: {spikeDetectionResult.AverageScore:F2}, Certainty score: {spikeDetectionResult.MinPValue:F2} (closer to zero is more certain). ";
-            }
+        }
+        else if (isChangeDetected)
+        {
+            analysisFeedback += "Change issue detected. ";
+        }
+        else if (isSpikeDetected)
+        {
+            analysisFeedback += "Spike issue detected. ";
         }
         else
         {
             analysisFeedback += "No significant issues detected.";
+        }
+
+        if (isChangeDetected)
+        {
+            var datePingInfo = new PingInfo();
+            datePingInfo.DateSentInt = (uint)changeDetectionResult.IndexOfFirstDetection;
+            analysisFeedback += $"Changes detected: first change at {datePingInfo.DateSent} ,number of changes {changeDetectionResult.NumberOfDetections}, Avg Response Time: {changeDetectionResult.AverageScore:F2}, Certainty score : {changeDetectionResult.MinPValue:F2} (closer to zero is more certain). ";
+        }
+        if (isSpikeDetected)
+        {
+            var datePingInfo = new PingInfo();
+            datePingInfo.DateSentInt = (uint)spikeDetectionResult.IndexOfFirstDetection;
+            analysisFeedback += $"Spikes detected: first spike at {datePingInfo.DateSent}, number of spikes {spikeDetectionResult.NumberOfDetections}, Avg Response Time: {spikeDetectionResult.AverageScore:F2}, Certainty score: {spikeDetectionResult.MinPValue:F2} (closer to zero is more certain). ";
         }
         // Adding Martingale value analysis if relevant
         if (maxMartingaleValue > MartingaleDetectionThreshold)
