@@ -84,16 +84,26 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
     public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
     {
-        // 1. Check the Cache
+        _windowSize = windowSize;
         var cachedResult = _cachedMonitorPingInfos.FirstOrDefault(mpi =>
                             mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
-        if (cachedResult != null)
+        if (cachedResult != null && windowSize > 0 && cachedResult.PingInfos.Count >= windowSize)
         {
-            // Adjust if windowSize filtering is needed
             return cachedResult;
         }
 
-        return await GetDBMonitorPingInfo(monitorIPID, windowSize, dataSetID);
+        if (cachedResult != null)
+        {
+            _cachedMonitorPingInfos.Remove(cachedResult);
+        }
+
+        var refreshed = await GetDBMonitorPingInfo(monitorIPID, windowSize, dataSetID);
+        if (refreshed != null)
+        {
+            _cachedMonitorPingInfos.RemoveAll(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
+            _cachedMonitorPingInfos.Add(refreshed);
+        }
+        return refreshed;
     }
 
 
@@ -326,7 +336,8 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         cachedMonitorPingInfo.PingInfos.Sort((x, y) => x.DateSentInt.CompareTo(y.DateSentInt));
 
         // Ensure the collection does not exceed the window size by removing the oldest entries first.
-        int excess = cachedMonitorPingInfo.PingInfos.Count - _windowSize;
+        int limit = _windowSize > 0 ? _windowSize : cachedMonitorPingInfo.PingInfos.Count;
+        int excess = cachedMonitorPingInfo.PingInfos.Count - limit;
         if (excess > 0)
         {
             cachedMonitorPingInfo.PingInfos.RemoveRange(0, excess);
@@ -475,9 +486,6 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     }
 
 }
-
-
-
 
 
 

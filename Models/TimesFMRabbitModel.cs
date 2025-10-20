@@ -150,24 +150,36 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         var rtts = goodValues.ToArray();
         var n = rtts.Length;
 
+        if (n < 2)
+        {
+            _log.LogDebug("[TimesFM] {ModelType} monitor {MonitorId} skipped: only {Usable} usable points after timeout filtering", _modelType, _monitorPingInfoID, n);
+            return allPreds;
+        }
+
+        int effectivePreTrain = Math.Min(PreTrain, Math.Max(1, n - 1));
+        if (effectivePreTrain <= 0)
+            effectivePreTrain = 1;
+        if (effectivePreTrain >= n)
+        {
+            _log.LogDebug("[TimesFM] {ModelType} monitor {MonitorId} skipped: usable points {Usable} <= effective pre-train {Effective}", _modelType, _monitorPingInfoID, n, effectivePreTrain);
+            return allPreds;
+        }
+        if (effectivePreTrain < PreTrain)
+        {
+            _log.LogDebug("[TimesFM] {ModelType} monitor {MonitorId} reduced pre-train from {PreTrain} to {Effective} because only {Usable} usable points were available", _modelType, _monitorPingInfoID, PreTrain, effectivePreTrain, n);
+        }
+
         // Reset martingale per evaluation window for sane, comparable telemetry
         _martingale = 1.0;
         _maxMartingaleThisBatch = 1.0;
 
         var preds = new List<AnomalyPrediction>(n);
-        for (int i = 0; i < Math.Min(PreTrain, n); i++)
+        for (int i = 0; i < Math.Min(effectivePreTrain, n); i++)
             preds.Add(AnomalyPrediction.Neutral());
 
-        if (n <= PreTrain)
-        {
-            for (int k = 0; k < goodIndices.Count; k++)
-                allPreds[goodIndices[k]] = preds[k];
-            return allPreds;
-        }
-
         // Rolling prefixes: horizon=1
-        var batchSeries = new List<List<double>>(n - PreTrain);
-        for (int i = PreTrain; i < n; i++)
+        var batchSeries = new List<List<double>>(n - effectivePreTrain);
+        for (int i = effectivePreTrain; i < n; i++)
             batchSeries.Add(rtts.Take(i).ToList());
 
         _log.LogDebug(
@@ -210,8 +222,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             _log.LogError(ex, "[TimesFM] {ModelType} monitor {MonitorId} request timed out after {Timeout}", _modelType, _monitorPingInfoID, LlmStreamTimeout);
             throw new TimeoutException($"TimesFM streaming response timed out after {LlmStreamTimeout}", ex);
         }
-        var resp = JsonSerializer.Deserialize<TimesFmResponse>(content)
-                   ?? throw new InvalidOperationException("TimesFM: null response");
+        var resp = ParseTimesFmResponse(content);
 
         var f = NormalizeForecast(resp);      // length >=1
         var q = NormalizeQuantiles(resp);     // double?[][] or null
@@ -244,7 +255,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         var kOfNQueue = new Queue<bool>(_kOfNN);
         int kOfNCount = 0;
 
-        for (int i = PreTrain; i < n; i++)
+        for (int i = effectivePreTrain; i < n; i++)
         {
             var j = i - PreTrain;
             var y = rtts[i];
@@ -496,6 +507,57 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         }
         _log.LogDebug("[TimesFM] {ModelType} monitor {MonitorId} completed stream ({CharCount} chars)", _modelType, _monitorPingInfoID, sb.Length);
         return sb.ToString();
+    }
+
+    private TimesFmResponse ParseTimesFmResponse(string content)
+    {
+        var bytes = Encoding.UTF8.GetBytes(content);
+        var reader = new Utf8JsonReader(bytes, new JsonReaderOptions
+        {
+            AllowTrailingCommas = true,
+            CommentHandling = JsonCommentHandling.Skip
+        });
+
+        TimesFmResponse? primary = null;
+        List<JsonElement>? extras = null;
+
+        while (JsonDocument.TryParseValue(ref reader, out var doc))
+        {
+            using var disposableDoc = doc;
+            if (primary == null)
+            {
+                primary = disposableDoc.Deserialize<TimesFmResponse>();
+                if (primary == null)
+                    throw new InvalidOperationException("TimesFM: null response payload");
+            }
+            else
+            {
+                extras ??= new List<JsonElement>();
+                extras.Add(disposableDoc.RootElement.Clone());
+            }
+        }
+
+        if (extras is { Count: > 0 })
+        {
+            foreach (var extra in extras)
+            {
+                string info = extra.ValueKind switch
+                {
+                    JsonValueKind.Object => string.Join(",", extra.EnumerateObject().Select(p => p.Name)),
+                    JsonValueKind.Array => $"array[{extra.GetArrayLength()}]",
+                    JsonValueKind.String => "string",
+                    JsonValueKind.Number => "number",
+                    JsonValueKind.True or JsonValueKind.False => "bool",
+                    JsonValueKind.Null => "null",
+                    _ => extra.ValueKind.ToString()
+                };
+                _log.LogInformation("TimesFM supplemental payload for monitor {Monitor}: kind={Kind} head={Info}", _monitorPingInfoID, extra.ValueKind, info);
+            }
+            _log.LogInformation("TimesFM response for monitor {Monitor} included {Count} supplemental payload(s); storing extras for diagnostics", _monitorPingInfoID, extras.Count);
+            // Future: wire extras into diagnostics if needed.
+        }
+
+        return primary ?? throw new InvalidOperationException("TimesFM: no primary payload found");
     }
 
     private static (int loIdx, int hiIdx) PickQuantileIndices(double confidence)

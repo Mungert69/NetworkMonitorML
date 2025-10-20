@@ -537,7 +537,11 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>> CheckHost(int monitorIPID, int dataSetID)
     {
-        var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, PredictWindow, dataSetID);
+        var windowConfig = _windowManager.GetConfig(monitorIPID);
+        int baseWindow = Math.Max(PredictWindow, 1);
+        int fetchWindow = Math.Max(baseWindow, Math.Max(windowConfig.ChangeWindow, windowConfig.SpikeWindow));
+        fetchWindow = Math.Max(fetchWindow, Math.Max(windowConfig.ChangePreTrain + 1, windowConfig.SpikePreTrain + 1));
+        var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, fetchWindow, dataSetID);
         return await CheckHost(monitorPingInfo);
     }
     private string AnalyzeResults(DetectionResult changeDetectionResult, DetectionResult spikeDetectionResult)
@@ -678,6 +682,11 @@ public class MonitorMLService : IMonitorMLService
             _logger.LogDebug("Window config before change detection monitor={Monitor} changeWindow={ChangeWindow} changePreTrain={ChangePreTrain} spikeWindow={SpikeWindow} spikePreTrain={SpikePreTrain}", monitorIPID, changeWindow, changePreTrain, config.SpikeWindow, config.SpikePreTrain);
 
             localPingInfos = TrimWindow(localPingInfos, changeWindow, changeMaxWindow, changePreTrain);
+            if (!HasSufficientUsableData("change", monitorIPID, localPingInfos, changeWindow, changePreTrain, detectionResult))
+            {
+                detectionResult.IsDataLimited = true;
+                return detectionResult;
+            }
             await EnsureModelInitialized(monitorIPID, "Change", changeConfidence, changePreTrain);
             detectionResult = PredictForHostChange(localPingInfos, monitorIPID);
             _logger.LogDebug($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
@@ -716,6 +725,11 @@ public class MonitorMLService : IMonitorMLService
             _logger.LogDebug("Window config before spike detection monitor={Monitor} changeWindow={ChangeWindow} changePreTrain={ChangePreTrain} spikeWindow={SpikeWindow} spikePreTrain={SpikePreTrain}", monitorIPID, config.ChangeWindow, config.ChangePreTrain, spikeWindow, spikePreTrain);
 
             var trimmedLocalPingInfos = TrimWindow(originalLocalPingInfos, spikeWindow, spikeMaxWindow, spikePreTrain);
+            if (!HasSufficientUsableData("spike", monitorIPID, trimmedLocalPingInfos, spikeWindow, spikePreTrain, detectionResult))
+            {
+                detectionResult.IsDataLimited = true;
+                return detectionResult;
+            }
             await EnsureModelInitialized(monitorIPID, "Spike", spikeConfidence, spikePreTrain);
             detectionResult = PredictForHostSpike(trimmedLocalPingInfos, monitorIPID, spikeThreshold);
 
@@ -757,6 +771,20 @@ public class MonitorMLService : IMonitorMLService
         return source.GetRange(start, desired);
     }
 
+    private bool HasSufficientUsableData(string mode, int monitorIPID, List<LocalPingInfo> data, int targetWindow, int preTrain, DetectionResult detectionResult)
+    {
+        int total = data.Count;
+        int usable = data.Count(pi => !pi.IsTimeout());
+        int required = Math.Max(targetWindow, preTrain + 1);
+        if (usable >= required)
+            return true;
+
+        detectionResult.Result.Success = false;
+        detectionResult.Result.Message = $" Warning : Skipped {mode} detection for monitor {monitorIPID} . Only {usable} usable points (total={total}) available but require at least {required} (window={targetWindow}, preTrain={preTrain}).";
+        _logger.LogWarning("Skipping {Mode} detection for monitor {Monitor}: usable points {Usable} of {Total} < required {Required} (window={Window}, preTrain={PreTrain})", mode, monitorIPID, usable, total, required, targetWindow, preTrain);
+        return false;
+    }
+
     private bool TryReuseLatchedDetection(MonitorPingInfo monitorPingInfo, bool isChange, out DetectionResult detectionResult)
     {
         var status = monitorPingInfo.PredictStatus;
@@ -771,7 +799,7 @@ public class MonitorMLService : IMonitorMLService
             };
             detectionResult.Result.Success = true;
             detectionResult.Result.Message = "Skipped run: alert already sent";
-            _logger.LogDebug("Skipping {Mode} detection for monitor {Monitor} because AlertSent is true", isChange ? "change" : "spike", monitorPingInfo.MonitorIPID);
+            _logger.LogInformation("Skipping {Mode} detection for monitor {Monitor}: PredictStatus.AlertSent is true, reusing latched TimesFM results", isChange ? "change" : "spike", monitorPingInfo.MonitorIPID);
             return true;
         }
 
