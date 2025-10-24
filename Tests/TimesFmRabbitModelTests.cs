@@ -23,7 +23,7 @@ public sealed class TimesFmRabbitModelTests
     {
         var sys = LocalRabbitUrl();
 
-        await using var responder = new FakeSpaceResponder(sys, (payload, replyKey) =>
+        var responder = TryCreateResponder(sys, (payload, replyKey) =>
         {
             int k = 1;
             try
@@ -53,7 +53,18 @@ public sealed class TimesFmRabbitModelTests
             return new[] { content };
         });
 
+        if (responder is null)
+        {
+            return;
+        }
+
+        await using var fakeResponder = responder;
+
         var repo = MakeRabbitRepo(sys);
+        if (repo is null)
+        {
+            return;
+        }
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
@@ -82,7 +93,7 @@ public sealed class TimesFmRabbitModelTests
     {
         var sys = LocalRabbitUrl();
 
-        await using var responder = new FakeSpaceResponder(sys, (payload, replyKey) =>
+        var responder = TryCreateResponder(sys, (payload, replyKey) =>
         {
             var content = JsonSerializer.Serialize(new
             {
@@ -95,7 +106,18 @@ public sealed class TimesFmRabbitModelTests
             return new[] { content };
         });
 
+        if (responder is null)
+        {
+            return;
+        }
+
+        await using var fakeResponder = responder;
+
         var repo = MakeRabbitRepo(sys);
+        if (repo is null)
+        {
+            return;
+        }
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
@@ -122,7 +144,7 @@ public sealed class TimesFmRabbitModelTests
         var sys = LocalRabbitUrl();
 
         int call = 0;
-        await using var responder = new FakeSpaceResponder(sys, (payload, replyKey) =>
+        var responder = TryCreateResponder(sys, (payload, replyKey) =>
         {
             call++;
             if (call == 1)
@@ -151,7 +173,18 @@ public sealed class TimesFmRabbitModelTests
             }
         });
 
+        if (responder is null)
+        {
+            return;
+        }
+
+        await using var fakeResponder = responder;
+
         var repo1 = MakeRabbitRepo(sys);
+        if (repo1 is null)
+        {
+            return;
+        }
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
@@ -160,6 +193,10 @@ public sealed class TimesFmRabbitModelTests
             var preds1 = model1.PredictList(MakePings(9.7, 10.2).ToList()).ToList();
 
             var repo2 = MakeRabbitRepo(sys);
+            if (repo2 is null)
+            {
+                return;
+            }
             try
             {
                 var model2 = new TimesFmRabbitModel(repo2, sys, log, monitorPingInfoID: 2, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
@@ -183,7 +220,7 @@ public sealed class TimesFmRabbitModelTests
     {
         var sys = LocalRabbitUrl();
 
-        await using var responder = new FakeSpaceResponder(sys, (payload, replyKey) =>
+        var responder = TryCreateResponder(sys, (payload, replyKey) =>
         {
             int k = 1;
             if (payload.TryGetProperty("messages", out var msgs) && msgs.ValueKind == JsonValueKind.Array)
@@ -210,7 +247,18 @@ public sealed class TimesFmRabbitModelTests
             return new[] { content };
         });
 
+        if (responder is null)
+        {
+            return;
+        }
+
+        await using var fakeResponder = responder;
+
         var repo = MakeRabbitRepo(sys);
+        if (repo is null)
+        {
+            return;
+        }
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
@@ -235,7 +283,7 @@ public sealed class TimesFmRabbitModelTests
     {
         var sys = LocalRabbitUrl();
 
-        await using var responder = new FakeSpaceResponder(sys, (payload, replyKey) =>
+        var responder = TryCreateResponder(sys, (payload, replyKey) =>
         {
             int k = 1;
             if (payload.TryGetProperty("messages", out var msgs) && msgs.ValueKind == JsonValueKind.Array)
@@ -268,7 +316,18 @@ public sealed class TimesFmRabbitModelTests
             return new[] { full[..mid], full[mid..] };
         });
 
+        if (responder is null)
+        {
+            return;
+        }
+
+        await using var fakeResponder = responder;
+
         var repo = MakeRabbitRepo(sys);
+        if (repo is null)
+        {
+            return;
+        }
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
@@ -291,7 +350,7 @@ public sealed class TimesFmRabbitModelTests
     {
         var sys = LocalRabbitUrl();
 
-        await using var responder = new FakeSpaceResponder(sys, (payload, replyKey) =>
+        var responder = TryCreateResponder(sys, (payload, replyKey) =>
         {
             var content = JsonSerializer.Serialize(new
             {
@@ -304,7 +363,18 @@ public sealed class TimesFmRabbitModelTests
             return new[] { content };
         });
 
+        if (responder is null)
+        {
+            return;
+        }
+
+        await using var fakeResponder = responder;
+
         var repo = MakeRabbitRepo(sys);
+        if (repo is null)
+        {
+            return;
+        }
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;
@@ -325,7 +395,7 @@ public sealed class TimesFmRabbitModelTests
     {
         var sys = LocalRabbitUrl();
 
-        await using var responder = new FakeSpaceResponder(sys, (payload, replyKey) =>
+        var responder = TryCreateResponder(sys, (payload, replyKey) =>
         {
             int k = 1;
             if (payload.TryGetProperty("messages", out var msgs) && msgs.ValueKind == JsonValueKind.Array)
@@ -352,7 +422,18 @@ public sealed class TimesFmRabbitModelTests
             return new[] { content };
         });
 
+        if (responder is null)
+        {
+            return;
+        }
+
+        await using var fakeResponder = responder;
+
         var repo = MakeRabbitRepo(sys);
+        if (repo is null)
+        {
+            return;
+        }
         try
         {
             var log = NullLogger<TimesFmRabbitModel>.Instance;

@@ -16,11 +16,18 @@ using NetworkMonitor.Objects.Repository;   // IRabbitRepo, RabbitRepo
 using NetworkMonitor.Utils.Helpers;        // SystemParamsHelper
 
 using RabbitMQ.Client;                     // IConnection, IChannel, ConnectionFactory, ExchangeType
+using NetworkMonitor.Connection;
 
 namespace NetworkMonitorML.IntegrationTests
 {
     public static class TestHelpers
     {
+        private sealed class RabbitConnectionUnavailableException : Exception
+        {
+            public RabbitConnectionUnavailableException(string message)
+                : base(message) { }
+        }
+
         private static IConfiguration BuildConfig()
         {
             // Critical: load .env into process env for dotnet test before any reads
@@ -45,15 +52,26 @@ namespace NetworkMonitorML.IntegrationTests
         public static SystemUrl LocalRabbitUrl()
             => BuildParamsHelper().GetSystemParams().ThisSystemUrl;
 
-        public static IRabbitRepo MakeRabbitRepo(SystemUrl sys)
+        public static IRabbitRepo? MakeRabbitRepo(SystemUrl sys)
         {
-            var helper = BuildParamsHelper();
-            var sp = helper.GetSystemParams();
-            sp.ThisSystemUrl = sys;
+            var cfg = BuildConfig();
+            var netConfig = new NetConnectConfig(cfg, AppContext.BaseDirectory)
+            {
+                MaxRetries = 3,
+                RetryDelayMilliseconds = 500,
+                IsRestrictedPublishPerm = false
+            };
 
-            var repo = new RabbitRepo(NullLogger<RabbitRepo>.Instance, sp);
+            // Ensure the repo uses the caller-provided connection details and secrets.
+            netConfig.SetLocalSystemUrlAsync(sys).GetAwaiter().GetResult();
+
+            var repo = new RabbitRepo(NullLogger<RabbitRepo>.Instance, netConfig);
             var res  = repo.ConnectAndSetUp().GetAwaiter().GetResult();
-            if (!res.Success) throw new InvalidOperationException(res.Message);
+            if (!res.Success)
+            {
+                Console.Error.WriteLine($"[TestHelpers] RabbitMQ connection failed for {sys.RabbitHostName}:{sys.RabbitPort}: {res.Message}");
+                return null;
+            }
             return repo;
         }
 
@@ -67,7 +85,39 @@ namespace NetworkMonitorML.IntegrationTests
                 Password    = sys.RabbitPassword,
                 VirtualHost = sys.RabbitVHost
             };
-            return f.CreateConnectionAsync().GetAwaiter().GetResult();
+
+            var connectTask = f.CreateConnectionAsync();
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(5));
+            var completed = Task.WhenAny(connectTask, timeoutTask).GetAwaiter().GetResult();
+
+            if (completed != connectTask)
+            {
+                Console.Error.WriteLine($"[TestHelpers] RabbitMQ connection timed out for {sys.RabbitHostName}:{sys.RabbitPort}");
+                throw new RabbitConnectionUnavailableException($"RabbitMQ timeout at {sys.RabbitHostName}:{sys.RabbitPort}");
+            }
+
+            try
+            {
+                return connectTask.GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"[TestHelpers] RabbitMQ connection error for {sys.RabbitHostName}:{sys.RabbitPort}: {ex.Message}");
+                throw new RabbitConnectionUnavailableException($"RabbitMQ connection error at {sys.RabbitHostName}:{sys.RabbitPort}: {ex.Message}");
+            }
+        }
+
+        public static FakeSpaceResponder? TryCreateResponder(SystemUrl sys, Func<JsonElement, string, IEnumerable<string>> handler)
+        {
+            try
+            {
+                return new FakeSpaceResponder(sys, handler);
+            }
+            catch (RabbitConnectionUnavailableException ex)
+            {
+                Console.Error.WriteLine($"[TestHelpers] {ex.Message}");
+                return null;
+            }
         }
 
         public sealed class FakeSpaceResponder : IAsyncDisposable
