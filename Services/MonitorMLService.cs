@@ -503,11 +503,14 @@ public class MonitorMLService : IMonitorMLService
                 predictStatus.ChangeDetectionResult = changeDetectionResult;
                 predictStatus.SpikeDetectionResult = spikeDetectionResult;
                 predictStatus.EventTime = monitorPingInfo.DateEnded;
-                predictStatus.AlertFlag = changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected;
-                if (changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected)
+                predictStatus.AlertFlag = changeDetectionResult.IsIssueDetected && spikeDetectionResult.IsIssueDetected;
+                if (predictStatus.AlertFlag)
                 {
-                    //predictStatus.AlertFlag = true;
                     _logger.LogInformation($"MonitorPingInfo: {monitorPingInfo.ID} - {combinedAnalysis}");
+                }
+                else if (changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected)
+                {
+                    _logger.LogInformation($"MonitorPingInfo: {monitorPingInfo.ID} - Detection present but alert suppressed (requires spike and change). Details: {combinedAnalysis}");
                 }
                 predictStatus.Message = combinedAnalysis;
                 monitorPingInfo.PredictStatus = predictStatus;
@@ -561,15 +564,15 @@ public class MonitorMLService : IMonitorMLService
         }
         if (isChangeDetected && isSpikeDetected)
         {
-            analysisFeedback += "Possible issues detected. ";
+            analysisFeedback += "Change and spike detections aligned; alert raised. ";
         }
         else if (isChangeDetected)
         {
-            analysisFeedback += "Change issue detected. ";
+            analysisFeedback += "Change detected but spike not confirmed; alert suppressed. ";
         }
         else if (isSpikeDetected)
         {
-            analysisFeedback += "Spike issue detected. ";
+            analysisFeedback += "Spike detected but baseline change not confirmed; alert suppressed. ";
         }
         else
         {
@@ -580,13 +583,15 @@ public class MonitorMLService : IMonitorMLService
         {
             var datePingInfo = new PingInfo();
             datePingInfo.DateSentInt = (uint)changeDetectionResult.IndexOfFirstDetection;
-            analysisFeedback += $"Changes detected: first change at {datePingInfo.DateSent} ,number of changes {changeDetectionResult.NumberOfDetections}, Avg Response Time: {changeDetectionResult.AverageScore:F2}, Certainty score : {changeDetectionResult.MinPValue:F2} (closer to zero is more certain). ";
+            var gatingNote = isSpikeDetected ? string.Empty : " Alert pending spike confirmation.";
+            analysisFeedback += $"Changes detected: first change at {datePingInfo.DateSent} ,number of changes {changeDetectionResult.NumberOfDetections}, Avg Response Time: {changeDetectionResult.AverageScore:F2}, Certainty score : {changeDetectionResult.MinPValue:F2} (closer to zero is more certain).{gatingNote} ";
         }
         if (isSpikeDetected)
         {
             var datePingInfo = new PingInfo();
             datePingInfo.DateSentInt = (uint)spikeDetectionResult.IndexOfFirstDetection;
-            analysisFeedback += $"Spikes detected: first spike at {datePingInfo.DateSent}, number of spikes {spikeDetectionResult.NumberOfDetections}, Avg Response Time: {spikeDetectionResult.AverageScore:F2}, Certainty score: {spikeDetectionResult.MinPValue:F2} (closer to zero is more certain). ";
+            var gatingNote = isChangeDetected ? string.Empty : " Alert pending change confirmation.";
+            analysisFeedback += $"Spikes detected: first spike at {datePingInfo.DateSent}, number of spikes {spikeDetectionResult.NumberOfDetections}, Avg Response Time: {spikeDetectionResult.AverageScore:F2}, Certainty score: {spikeDetectionResult.MinPValue:F2} (closer to zero is more certain).{gatingNote} ";
         }
         // Adding Martingale value analysis if relevant
         if (maxMartingaleValue > MartingaleDetectionThreshold)

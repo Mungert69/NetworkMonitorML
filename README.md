@@ -33,8 +33,7 @@ NetworkMonitorML/
 ## Service identity
 - **ServiceID** – use the identifier configured in `appsettings-predict.json`.
 - **ServiceAuthKey** – base64 token generated with `NetworkMonitorAuthKeyGen`. This must
-  match the value expected by `NetworkMonitorAlert`. Do **not** commit the actual key to
-  source control.
+  match the value expected by `NetworkMonitorAlert`. Do **not** commit the actual key to source control.
 
 ## Running locally
 ```bash
@@ -48,6 +47,7 @@ Watch logs for:
 - `Published … predictStatusAlerts …` – alerts pushed to the alert service
 
 To control the spike simulator used in tests:
+- Note the predict_alert_simulator.py must be running to produce the endpoint
 ```bash
 curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
      -d '{"mode":"spike","spike_interval":1,"spike_latency_ms":1200}'
@@ -60,9 +60,9 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
 - Logging levels can be tuned via `Logging.LogLevel` (TimesFM + RabbitTransport loggers).
 
 ### How the data flows
-1. **Retrieve window** – `MonitorMLService` asks `IMonitorMLDataRepo` for the latest
+1. **Retrieve window** – `MonitorMLService` asks `MonitorMLDataRepo` for the latest
    `PreTrain + PredictWindow` samples of `LocalPingInfo`. The repo pulls the current dataset
-   and, if needed, stitches in data from the previous dataset to keep the series contiguous.
+   and, if needed, stitches in data from the previous dataset to keep the series contiguous and of a given number of sample points.
 2. **Warm-up** – The first `PreTrain` points seed the detector’s robust statistics
    (baseline median/MAD, rolling sigma, martingale seed). They are not scored.
 3. **Build prefixes** – For every subsequent point we build a prefix `[0..i]` of round-trip
@@ -75,8 +75,7 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
    p-values, and cooldown behaviour. Diagnostics (`timesfm sample …`) log the first four
    and last two samples for visibility.
 6. **Publish alert** – Results are written back to the database and published as
-   `PredictStatusAlert` messages (`alertUpdatePredictStatusAlerts`) so the alert service
-   can notify users.
+   `PredictStatusAlert` messages (`alertUpdatePredictStatusAlerts`) so the alert service can notify users. The service only raises the `AlertFlag` when both change and spike detectors report an issue for the same window; single-mode detections are logged but suppressed.
 
 ## TimesFM Prediction Monitor
 
@@ -99,6 +98,7 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
 - Informational logs capture batch summaries (`timesfm summary …`) alongside structured JSON samples (first four and last two rows) so on-call engineers can see residuals, gates, and martingale values without replaying the run.
 - `MonitorMLService` rolls those predictions into `DetectionResult` objects, counting detections, tracking first-occurrence timestamps, averaging residuals for flagged points, and recording minimum p-values / maximum martingale values. Windows downshift after multiple quiet runs and spring back to the configured maximum as soon as martingale/alerts heat up.
 - Updated results persist to the `PredictStatus` records and publish through Rabbit so downstream alerting services can fan out notifications.
+- Alerts require both change and spike detections before the `AlertFlag` is set, which keeps noise from single-mode detections out of downstream paging.
 
 ## Model configuration reference
 

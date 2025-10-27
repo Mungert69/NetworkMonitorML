@@ -84,6 +84,7 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(detectionResult.SpikeResult.IsIssueDetected, "No spike was detected.");
             Assert.True(detectionResult.SpikeResult.NumberOfDetections == 3, "Three spikes not detected.");
             Assert.True(detectionResult.SpikeResult.AverageScore == 1000, "The average score is out of the expected range.");
+            Assert.False(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? true, "Alert should remain false when only spike detection fires.");
 
         }
 
@@ -132,6 +133,7 @@ namespace NetworkMonitor.MonitorML.Tests
             // Now you can assert specific aspects of the DetectionResult
             Assert.True(detectionResult.ChangeResult.IsIssueDetected, "A change was not detected.");
             Assert.True(detectionResult.ChangeResult.NumberOfDetections == 1, $"{detectionResult.ChangeResult.NumberOfDetections} changes detected.");
+            Assert.False(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? true, "Alert should remain false until both change and spike detections fire.");
             //Assert.InRange(changeResult.MinPValue, 0, pValueThreshold, "The minimum p-value is out of the expected range.");
             // Adjust 'thresholdLow', 'thresholdHigh', and 'pValueThreshold' according to your expectations
         }
@@ -182,6 +184,7 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(detectionResult.SpikeResult.IsIssueDetected, "No spike was detected.");
             Assert.True(detectionResult.SpikeResult.NumberOfDetections == 4, "Five spikes not detected.");
             Assert.True(detectionResult.SpikeResult.AverageScore == 767.5, "The average score is out of the expected range.");
+            Assert.True(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? false, "Alert should be raised when both spike and change detections align.");
         }
 
         [Fact]
