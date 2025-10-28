@@ -65,15 +65,18 @@ namespace NetworkMonitor.ML
             ));
 
             var modelSelection = Configuration.GetValue<string>("ModelSelection") ?? "TimesFM";
+
+            services.AddSingleton<TimesFmModelFactory>(sp => new TimesFmModelFactory(
+                sp.GetRequiredService<IRabbitRepo>(),
+                sp.GetRequiredService<SystemParams>(),
+                sp.GetRequiredService<ILoggerFactory>(),
+                sp.GetRequiredService<MLParams>()));
+
             services.AddSingleton<IMLModelFactory>(sp =>
             {
                 if (string.Equals(modelSelection, "TimesFM", StringComparison.OrdinalIgnoreCase))
                 {
-                    return new TimesFmModelFactory(
-                        sp.GetRequiredService<IRabbitRepo>(),
-                        sp.GetRequiredService<SystemParams>(),
-                        sp.GetRequiredService<ILoggerFactory>(),
-                        sp.GetRequiredService<MLParams>());
+                    return sp.GetRequiredService<TimesFmModelFactory>();
                 }
 
                 if (string.Equals(modelSelection, "MicrosoftMLTS", StringComparison.OrdinalIgnoreCase))
@@ -81,8 +84,18 @@ namespace NetworkMonitor.ML
                     return new MLModelFactory();
                 }
 
-                throw new InvalidOperationException($"Unsupported ModelSelection value '{modelSelection}'. Valid options are 'TimesFM' and 'MicrosoftMLTS'.");
+                if (string.Equals(modelSelection, "Hybrid", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new MLModelFactory();
+                }
+
+                throw new InvalidOperationException($"Unsupported ModelSelection value '{modelSelection}'. Valid options are 'TimesFM', 'MicrosoftMLTS', and 'Hybrid'.");
             });
+
+            if (string.Equals(modelSelection, "Hybrid", StringComparison.OrdinalIgnoreCase))
+            {
+                services.AddSingleton<ISecondaryModelFactory>(sp => sp.GetRequiredService<TimesFmModelFactory>());
+            }
 
             services.AddSingleton<IMonitorMLDataRepo, MonitorMLDataRepo>();
             services.AddSingleton<IMonitorMLService, MonitorMLService>();

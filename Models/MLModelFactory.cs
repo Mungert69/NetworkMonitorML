@@ -7,6 +7,10 @@ namespace NetworkMonitor.ML.Model
         //IMLModel CreateChangeDetectionModel(int monitorPingInfoID, double confidence);
         //IMLModel CreateSpikeDetectionModel(int monitorPingInfoID, double confidence);
     }
+
+    public interface ISecondaryModelFactory : IMLModelFactory
+    {
+    }
     public class MLModelFactory : IMLModelFactory
     {
         

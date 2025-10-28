@@ -58,6 +58,7 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
   routing keys, detection thresholds).
 - `.env` – overrides for `EmailEncryptKey`, `RabbitPassword`, `ServiceAuthKey`, etc.
 - Logging levels can be tuned via `Logging.LogLevel` (TimesFM + RabbitTransport loggers).
+- Set `ModelSelection` to `Hybrid` when you want MicrosoftMLTS to act as the primary screen with TimesFM as the verifier. In that mode, configure per-backend thresholds under `ModelParameters.MicrosoftMLTS` (primary) and `ModelParameters.TimesFM` (secondary).
 
 ### How the data flows
 1. **Retrieve window** – `MonitorMLService` asks `MonitorMLDataRepo` for the latest
@@ -93,6 +94,11 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
 - Bands are widened with robust statistics (rolling MAD-derived sigma) and clamped to absolute (`5 ms`) or relative (`15%` of |forecast|) minimum widths so jitter does not create razor-thin thresholds.
 - A change flag requires both persistence (>=3 consecutive breaches or 6-of-12 recent breaches) and a magnitude gate (>=20% shift from the rolling baseline median). Confirmed changes trigger a 30-sample cooldown that freezes sigma to avoid overreacting while the system settles.
 - The adapter emits four telemetry channels per sample: `alert` (0/1), `score` (normalized residual), `p` (p-value shaped by persistence), and `martingale` (tempered evidence accumulator with a 25% dead-zone inside the band).
+
+### Hybrid verification pipeline
+- MicrosoftMLTS runs across every monitor and only escalates when both change and spike detectors agree (AND gate). This fast pass acts as a filter so expensive LLM scoring is reserved for highly suspicious windows.
+- When the AND gate succeeds, the same window is replayed through TimesFM via RabbitMQ. TimesFM only needs to corroborate a spike **or** a change to confirm the incident (OR gate). If TimesFM clears the window, the alert is suppressed.
+- Alert messages include both stages (`Primary (MicrosoftMLTS)` and `Secondary (TimesFM)`) so on-call engineers can see whether the verifier confirmed or vetoed the incident.
 
 ### Observability and alerting
 - Informational logs capture batch summaries (`timesfm summary …`) alongside structured JSON samples (first four and last two rows) so on-call engineers can see residuals, gates, and martingale values without replaying the run.

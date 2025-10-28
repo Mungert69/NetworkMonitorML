@@ -188,6 +188,80 @@ namespace NetworkMonitor.MonitorML.Tests
         }
 
         [Fact]
+        public async Task HybridPipeline_AllowsTimesFmToConfirmAlert()
+        {
+            // Arrange
+            int monitorIPID = 10;
+            int dataSetID = 0;
+            var mockMonitorPingInfo = MonitorMLTestData.GenerateDataWithSpikeAndChange(monitorIPID, dataSetID);
+            mockMonitorPingInfo.PredictStatus ??= new PredictStatus();
+
+            var systemParams = MonitorMLTestData.GetSystemParams();
+            var mlParams = MonitorMLTestData.GetHybridMLParams();
+
+            _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+            _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
+
+            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>(), dataSetID))
+                                  .ReturnsAsync(mockMonitorPingInfo);
+            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, dataSetID))
+                                  .ReturnsAsync(mockMonitorPingInfo);
+            _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
+                                  .ReturnsAsync(new ResultObj());
+            _monitorMLDataRepoMock.Setup(repo => repo.GetLatestMonitorPingInfos(It.IsAny<int>()))
+                                  .ReturnsAsync(new List<MonitorPingInfo> { mockMonitorPingInfo });
+
+            IMLModelFactory primaryFactory = new FakeModelFactory(changeDetect: true, spikeDetect: true);
+            ISecondaryModelFactory secondaryFactory = new FakeModelFactory(changeDetect: false, spikeDetect: true);
+
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, primaryFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object, secondaryFactory);
+            var result = await service.CheckHost(monitorIPID, dataSetID);
+
+            Assert.True(result.Success);
+            Assert.False(result.Data.ChangeResult.IsIssueDetected);
+            Assert.True(result.Data.SpikeResult.IsIssueDetected);
+            Assert.True(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? false);
+            Assert.Contains("Secondary (TimesFM)", result.Message);
+        }
+
+        [Fact]
+        public async Task HybridPipeline_SuppressesAlertWhenTimesFmRejects()
+        {
+            // Arrange
+            int monitorIPID = 11;
+            int dataSetID = 0;
+            var mockMonitorPingInfo = MonitorMLTestData.GenerateDataWithSpikeAndChange(monitorIPID, dataSetID);
+            mockMonitorPingInfo.PredictStatus ??= new PredictStatus();
+
+            var systemParams = MonitorMLTestData.GetSystemParams();
+            var mlParams = MonitorMLTestData.GetHybridMLParams();
+
+            _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+            _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
+
+            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, It.IsAny<int>(), dataSetID))
+                                  .ReturnsAsync(mockMonitorPingInfo);
+            _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, dataSetID))
+                                  .ReturnsAsync(mockMonitorPingInfo);
+            _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
+                                  .ReturnsAsync(new ResultObj());
+            _monitorMLDataRepoMock.Setup(repo => repo.GetLatestMonitorPingInfos(It.IsAny<int>()))
+                                  .ReturnsAsync(new List<MonitorPingInfo> { mockMonitorPingInfo });
+
+            IMLModelFactory primaryFactory = new FakeModelFactory(changeDetect: true, spikeDetect: true);
+            ISecondaryModelFactory secondaryFactory = new FakeModelFactory(changeDetect: false, spikeDetect: false);
+
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, primaryFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object, secondaryFactory);
+            var result = await service.CheckHost(monitorIPID, dataSetID);
+
+            Assert.True(result.Success);
+            Assert.False(result.Data.ChangeResult.IsIssueDetected);
+            Assert.False(result.Data.SpikeResult.IsIssueDetected);
+            Assert.False(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? true);
+            Assert.Contains("TimesFM vetoed alert", result.Message);
+        }
+
+        [Fact]
         public async Task CheckLatestHosts_CheckReturnLogic()
         {
             // Arrange
@@ -213,7 +287,7 @@ namespace NetworkMonitor.MonitorML.Tests
 
 
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
-                                  .ReturnsAsync(new ResultObj());
+                .ReturnsAsync(new ResultObj());
 
             // Further setup for ML model to predict based on data with spikes and changes could be here
             // This may involve mocking the model's response to such data or ensuring the model factory produces a model capable of handling this complexity
@@ -293,5 +367,56 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.Contains("Skipped", mockMonitorPingInfo.PredictStatus.ChangeDetectionResult.Result.Message);
             Assert.Contains("Skipped", mockMonitorPingInfo.PredictStatus.SpikeDetectionResult.Result.Message);
         }
+
+    private sealed class FakeModelFactory : IMLModelFactory, ISecondaryModelFactory
+    {
+        private readonly bool _detectChange;
+        private readonly bool _detectSpike;
+
+        public FakeModelFactory(bool changeDetect, bool spikeDetect)
+        {
+            _detectChange = changeDetect;
+            _detectSpike = spikeDetect;
+        }
+
+        public IMLModel CreateModel(string modelType, int monitorPingInfoID, double confidence, int preTrain)
+        {
+            bool detect = string.Equals(modelType, "change", StringComparison.OrdinalIgnoreCase) ? _detectChange : _detectSpike;
+            return new FakeModel(detect) { Confidence = confidence, PreTrain = preTrain };
+        }
     }
+
+    private sealed class FakeModel : IMLModel
+    {
+        private readonly bool _detect;
+
+        public FakeModel(bool detect) => _detect = detect;
+
+        public double Confidence { get; set; }
+        public int PreTrain { get; set; }
+
+        public void Train(List<LocalPingInfo> data) { }
+
+        public AnomalyPrediction Predict(LocalPingInfo input) => CreatePrediction(_detect);
+
+        public IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs)
+            => inputs.Select(_ => CreatePrediction(_detect)).ToList();
+
+        public void PrintPrediction(IEnumerable<AnomalyPrediction> predictions) { }
+
+        private static AnomalyPrediction CreatePrediction(bool detect)
+        {
+            return new AnomalyPrediction
+            {
+                Prediction = new[]
+                {
+                    detect ? 1d : 0d,
+                    detect ? 100d : 10d,
+                    detect ? 0.01d : 0.9d,
+                    detect ? 50d : 5d
+                }
+            };
+        }
+    }
+}
 }

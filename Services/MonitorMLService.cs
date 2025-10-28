@@ -43,19 +43,34 @@ public interface IMonitorMLService
 }
 public class MonitorMLService : IMonitorMLService
 {
-    private Dictionary<(int monitorIPID, string modelType), IMLModel> _models = new Dictionary<(int monitorIPID, string modelType), IMLModel>();
+    private enum DetectionBackend
+    {
+        Primary,
+        Secondary
+    }
+
+    private readonly Dictionary<(int monitorIPID, string modelType), IMLModel> _models = new();
+    private readonly Dictionary<(int monitorIPID, string modelType), IMLModel> _secondaryModels = new();
     private ILogger _logger;
     private IRabbitRepo _rabbitRepo;
     private int _martingaleDetectionThreshold = 100;
     //private IServiceScopeFactory _scopeFactory;
     private readonly IMLModelFactory _mlModelFactory;
+    private readonly IMLModelFactory? _secondaryModelFactory;
     private readonly IMonitorMLDataRepo _monitorMLDataRepo;
     private SystemParams _systemParams;
     private MLParams _mlParams;
-    private readonly ConcurrentDictionary<int, ResolvedModelParameters> _hostParameters = new();
+    private readonly ConcurrentDictionary<int, ResolvedHostParameters> _hostParameters = new();
     private readonly AdaptiveWindowManager _windowManager;
     private bool _isRunning;
+    private readonly bool _isHybrid;
     private DeviationAnalyzer _deviationAnalyzer = new DeviationAnalyzer(10, 1);
+
+    private sealed class ResolvedHostParameters
+    {
+        public ResolvedModelParameters Primary { get; init; } = new();
+        public ResolvedModelParameters? Secondary { get; init; }
+    }
     public int PredictWindow
     {
         get => _mlParams.PredictWindow;
@@ -87,149 +102,166 @@ public class MonitorMLService : IMonitorMLService
             ReconfigureAdaptiveSettings();
         }
     }
-    public MonitorMLService(ILogger<MonitorMLService> logger, IMonitorMLDataRepo monitorMLDataRepo, IMLModelFactory mlModelFactory, IRabbitRepo rabbitRepo, ISystemParamsHelper systemParamsHelper)
+    public MonitorMLService(ILogger<MonitorMLService> logger, IMonitorMLDataRepo monitorMLDataRepo, IMLModelFactory mlModelFactory, IRabbitRepo rabbitRepo, ISystemParamsHelper systemParamsHelper, ISecondaryModelFactory? secondaryModelFactory = null)
     {
         _logger = logger;
         //_scopeFactory = scopeFactory;
         _mlModelFactory = mlModelFactory;
+        _secondaryModelFactory = secondaryModelFactory;
         _monitorMLDataRepo = monitorMLDataRepo;
         _rabbitRepo = rabbitRepo;
         _systemParams = systemParamsHelper.GetSystemParams();
         _mlParams = systemParamsHelper.GetMLParams();
+        _isHybrid = !string.IsNullOrEmpty(_mlParams.SecondaryModelSelection);
+        if (_isHybrid && _secondaryModelFactory == null)
+        {
+            throw new InvalidOperationException("Hybrid model selection requires a secondary model factory.");
+        }
         _windowManager = new AdaptiveWindowManager(BuildAdaptiveSettings(), logger);
         ReconfigureAdaptiveSettings();
         Init().Wait();
     }
 
-    private ResolvedModelParameters ResolveParameters(MonitorModelConfig? hostConfig)
+    private ResolvedHostParameters ResolveParameters(MonitorModelConfig? hostConfig)
     {
-        var baseline = _mlParams.ActiveModelParameters;
-        var resolved = new ResolvedModelParameters
+        var primaryResolved = _mlParams.ActiveModelParameters.Clone();
+        ResolvedModelParameters? secondaryResolved = _isHybrid ? _mlParams.SecondaryModelParameters.Clone() : null;
+
+        if (hostConfig != null)
         {
-            ChangeConfidence = baseline.ChangeConfidence,
-            SpikeConfidence = baseline.SpikeConfidence,
-            ChangePreTrain = baseline.ChangePreTrain,
-            SpikePreTrain = baseline.SpikePreTrain,
-            PredictWindow = baseline.PredictWindow,
-            SpikeDetectionThreshold = baseline.SpikeDetectionThreshold,
-            TimesFmChangeSettings = baseline.TimesFmChangeSettings.Clone(),
-            TimesFmSpikeSettings = baseline.TimesFmSpikeSettings.Clone()
+            void ApplyCommon(Action<ResolvedModelParameters> setter)
+            {
+                setter(primaryResolved);
+                if (secondaryResolved != null)
+                {
+                    setter(secondaryResolved);
+                }
+            }
+
+            if (hostConfig.ChangeConfidence.HasValue)
+                ApplyCommon(r => r.ChangeConfidence = hostConfig.ChangeConfidence.Value);
+            if (hostConfig.SpikeConfidence.HasValue)
+                ApplyCommon(r => r.SpikeConfidence = hostConfig.SpikeConfidence.Value);
+            if (hostConfig.ChangePreTrain.HasValue)
+                ApplyCommon(r => r.ChangePreTrain = hostConfig.ChangePreTrain.Value);
+            if (hostConfig.SpikePreTrain.HasValue)
+                ApplyCommon(r => r.SpikePreTrain = hostConfig.SpikePreTrain.Value);
+            if (hostConfig.PredictWindow.HasValue)
+                ApplyCommon(r => r.PredictWindow = hostConfig.PredictWindow.Value);
+            if (hostConfig.SpikeDetectionThreshold.HasValue)
+                ApplyCommon(r => r.SpikeDetectionThreshold = hostConfig.SpikeDetectionThreshold.Value);
+
+            void ApplySharedTimesFmSettings(TimesFmResolvedSettings target)
+            {
+                if (hostConfig.RunLength.HasValue)
+                    target.RunLength = hostConfig.RunLength.Value;
+                if (hostConfig.KOfNK.HasValue)
+                    target.KOfNK = hostConfig.KOfNK.Value;
+                if (hostConfig.KOfNN.HasValue)
+                    target.KOfNN = hostConfig.KOfNN.Value;
+                if (hostConfig.MadAlpha.HasValue)
+                    target.MadAlpha = hostConfig.MadAlpha.Value;
+                if (hostConfig.MinBandAbs.HasValue)
+                    target.MinBandAbs = hostConfig.MinBandAbs.Value;
+                if (hostConfig.MinBandRel.HasValue)
+                    target.MinBandRel = hostConfig.MinBandRel.Value;
+                if (hostConfig.RollSigmaWindow.HasValue)
+                    target.RollSigmaWindow = hostConfig.RollSigmaWindow.Value;
+                if (hostConfig.BaselineWindow.HasValue)
+                    target.BaselineWindow = hostConfig.BaselineWindow.Value;
+                if (hostConfig.SigmaCooldown.HasValue)
+                    target.SigmaCooldown = hostConfig.SigmaCooldown.Value;
+                if (hostConfig.MinRelShift.HasValue)
+                    target.MinRelShift = hostConfig.MinRelShift.Value;
+                if (hostConfig.SampleRows.HasValue)
+                    target.SampleRows = hostConfig.SampleRows.Value;
+                if (hostConfig.NearMissFraction.HasValue)
+                    target.NearMissFraction = hostConfig.NearMissFraction.Value;
+                if (hostConfig.LogJson.HasValue)
+                    target.LogJson = hostConfig.LogJson.Value;
+            }
+
+            void ApplyModeSpecificTimesFmSettings(TimesFmResolvedSettings target, bool isChange)
+            {
+                if (isChange)
+                {
+                    if (hostConfig.ChangeRunLength.HasValue)
+                        target.RunLength = hostConfig.ChangeRunLength.Value;
+                    if (hostConfig.ChangeKOfNK.HasValue)
+                        target.KOfNK = hostConfig.ChangeKOfNK.Value;
+                    if (hostConfig.ChangeKOfNN.HasValue)
+                        target.KOfNN = hostConfig.ChangeKOfNN.Value;
+                    if (hostConfig.ChangeMadAlpha.HasValue)
+                        target.MadAlpha = hostConfig.ChangeMadAlpha.Value;
+                    if (hostConfig.ChangeMinBandAbs.HasValue)
+                        target.MinBandAbs = hostConfig.ChangeMinBandAbs.Value;
+                    if (hostConfig.ChangeMinBandRel.HasValue)
+                        target.MinBandRel = hostConfig.ChangeMinBandRel.Value;
+                    if (hostConfig.ChangeRollSigmaWindow.HasValue)
+                        target.RollSigmaWindow = hostConfig.ChangeRollSigmaWindow.Value;
+                    if (hostConfig.ChangeBaselineWindow.HasValue)
+                        target.BaselineWindow = hostConfig.ChangeBaselineWindow.Value;
+                    if (hostConfig.ChangeSigmaCooldown.HasValue)
+                        target.SigmaCooldown = hostConfig.ChangeSigmaCooldown.Value;
+                    if (hostConfig.ChangeMinRelShift.HasValue)
+                        target.MinRelShift = hostConfig.ChangeMinRelShift.Value;
+                    if (hostConfig.ChangeSampleRows.HasValue)
+                        target.SampleRows = hostConfig.ChangeSampleRows.Value;
+                    if (hostConfig.ChangeNearMissFraction.HasValue)
+                        target.NearMissFraction = hostConfig.ChangeNearMissFraction.Value;
+                    if (hostConfig.ChangeLogJson.HasValue)
+                        target.LogJson = hostConfig.ChangeLogJson.Value;
+                }
+                else
+                {
+                    if (hostConfig.SpikeRunLength.HasValue)
+                        target.RunLength = hostConfig.SpikeRunLength.Value;
+                    if (hostConfig.SpikeKOfNK.HasValue)
+                        target.KOfNK = hostConfig.SpikeKOfNK.Value;
+                    if (hostConfig.SpikeKOfNN.HasValue)
+                        target.KOfNN = hostConfig.SpikeKOfNN.Value;
+                    if (hostConfig.SpikeMadAlpha.HasValue)
+                        target.MadAlpha = hostConfig.SpikeMadAlpha.Value;
+                    if (hostConfig.SpikeMinBandAbs.HasValue)
+                        target.MinBandAbs = hostConfig.SpikeMinBandAbs.Value;
+                    if (hostConfig.SpikeMinBandRel.HasValue)
+                        target.MinBandRel = hostConfig.SpikeMinBandRel.Value;
+                    if (hostConfig.SpikeRollSigmaWindow.HasValue)
+                        target.RollSigmaWindow = hostConfig.SpikeRollSigmaWindow.Value;
+                    if (hostConfig.SpikeBaselineWindow.HasValue)
+                        target.BaselineWindow = hostConfig.SpikeBaselineWindow.Value;
+                    if (hostConfig.SpikeSigmaCooldown.HasValue)
+                        target.SigmaCooldown = hostConfig.SpikeSigmaCooldown.Value;
+                    if (hostConfig.SpikeMinRelShift.HasValue)
+                        target.MinRelShift = hostConfig.SpikeMinRelShift.Value;
+                    if (hostConfig.SpikeSampleRows.HasValue)
+                        target.SampleRows = hostConfig.SpikeSampleRows.Value;
+                    if (hostConfig.SpikeNearMissFraction.HasValue)
+                        target.NearMissFraction = hostConfig.SpikeNearMissFraction.Value;
+                    if (hostConfig.SpikeLogJson.HasValue)
+                        target.LogJson = hostConfig.SpikeLogJson.Value;
+                }
+            }
+
+            ApplySharedTimesFmSettings(primaryResolved.TimesFmChangeSettings);
+            ApplyModeSpecificTimesFmSettings(primaryResolved.TimesFmChangeSettings, isChange: true);
+            ApplySharedTimesFmSettings(primaryResolved.TimesFmSpikeSettings);
+            ApplyModeSpecificTimesFmSettings(primaryResolved.TimesFmSpikeSettings, isChange: false);
+
+            if (secondaryResolved != null)
+            {
+                ApplySharedTimesFmSettings(secondaryResolved.TimesFmChangeSettings);
+                ApplyModeSpecificTimesFmSettings(secondaryResolved.TimesFmChangeSettings, isChange: true);
+                ApplySharedTimesFmSettings(secondaryResolved.TimesFmSpikeSettings);
+                ApplyModeSpecificTimesFmSettings(secondaryResolved.TimesFmSpikeSettings, isChange: false);
+            }
+        }
+
+        return new ResolvedHostParameters
+        {
+            Primary = primaryResolved,
+            Secondary = secondaryResolved
         };
-
-        if (hostConfig == null)
-            return resolved;
-
-        if (hostConfig.ChangeConfidence.HasValue)
-            resolved.ChangeConfidence = hostConfig.ChangeConfidence.Value;
-        if (hostConfig.SpikeConfidence.HasValue)
-            resolved.SpikeConfidence = hostConfig.SpikeConfidence.Value;
-        if (hostConfig.ChangePreTrain.HasValue)
-            resolved.ChangePreTrain = hostConfig.ChangePreTrain.Value;
-        if (hostConfig.SpikePreTrain.HasValue)
-            resolved.SpikePreTrain = hostConfig.SpikePreTrain.Value;
-        if (hostConfig.PredictWindow.HasValue)
-            resolved.PredictWindow = hostConfig.PredictWindow.Value;
-        if (hostConfig.SpikeDetectionThreshold.HasValue)
-            resolved.SpikeDetectionThreshold = hostConfig.SpikeDetectionThreshold.Value;
-
-        void ApplySharedTimesFmSettings(TimesFmResolvedSettings target)
-        {
-            if (hostConfig.RunLength.HasValue)
-                target.RunLength = hostConfig.RunLength.Value;
-            if (hostConfig.KOfNK.HasValue)
-                target.KOfNK = hostConfig.KOfNK.Value;
-            if (hostConfig.KOfNN.HasValue)
-                target.KOfNN = hostConfig.KOfNN.Value;
-            if (hostConfig.MadAlpha.HasValue)
-                target.MadAlpha = hostConfig.MadAlpha.Value;
-            if (hostConfig.MinBandAbs.HasValue)
-                target.MinBandAbs = hostConfig.MinBandAbs.Value;
-            if (hostConfig.MinBandRel.HasValue)
-                target.MinBandRel = hostConfig.MinBandRel.Value;
-            if (hostConfig.RollSigmaWindow.HasValue)
-                target.RollSigmaWindow = hostConfig.RollSigmaWindow.Value;
-            if (hostConfig.BaselineWindow.HasValue)
-                target.BaselineWindow = hostConfig.BaselineWindow.Value;
-            if (hostConfig.SigmaCooldown.HasValue)
-                target.SigmaCooldown = hostConfig.SigmaCooldown.Value;
-            if (hostConfig.MinRelShift.HasValue)
-                target.MinRelShift = hostConfig.MinRelShift.Value;
-            if (hostConfig.SampleRows.HasValue)
-                target.SampleRows = hostConfig.SampleRows.Value;
-            if (hostConfig.NearMissFraction.HasValue)
-                target.NearMissFraction = hostConfig.NearMissFraction.Value;
-            if (hostConfig.LogJson.HasValue)
-                target.LogJson = hostConfig.LogJson.Value;
-        }
-
-        void ApplyModeSpecificTimesFmSettings(TimesFmResolvedSettings target, bool isChange)
-        {
-            if (isChange)
-            {
-                if (hostConfig.ChangeRunLength.HasValue)
-                    target.RunLength = hostConfig.ChangeRunLength.Value;
-                if (hostConfig.ChangeKOfNK.HasValue)
-                    target.KOfNK = hostConfig.ChangeKOfNK.Value;
-                if (hostConfig.ChangeKOfNN.HasValue)
-                    target.KOfNN = hostConfig.ChangeKOfNN.Value;
-                if (hostConfig.ChangeMadAlpha.HasValue)
-                    target.MadAlpha = hostConfig.ChangeMadAlpha.Value;
-                if (hostConfig.ChangeMinBandAbs.HasValue)
-                    target.MinBandAbs = hostConfig.ChangeMinBandAbs.Value;
-                if (hostConfig.ChangeMinBandRel.HasValue)
-                    target.MinBandRel = hostConfig.ChangeMinBandRel.Value;
-                if (hostConfig.ChangeRollSigmaWindow.HasValue)
-                    target.RollSigmaWindow = hostConfig.ChangeRollSigmaWindow.Value;
-                if (hostConfig.ChangeBaselineWindow.HasValue)
-                    target.BaselineWindow = hostConfig.ChangeBaselineWindow.Value;
-                if (hostConfig.ChangeSigmaCooldown.HasValue)
-                    target.SigmaCooldown = hostConfig.ChangeSigmaCooldown.Value;
-                if (hostConfig.ChangeMinRelShift.HasValue)
-                    target.MinRelShift = hostConfig.ChangeMinRelShift.Value;
-                if (hostConfig.ChangeSampleRows.HasValue)
-                    target.SampleRows = hostConfig.ChangeSampleRows.Value;
-                if (hostConfig.ChangeNearMissFraction.HasValue)
-                    target.NearMissFraction = hostConfig.ChangeNearMissFraction.Value;
-                if (hostConfig.ChangeLogJson.HasValue)
-                    target.LogJson = hostConfig.ChangeLogJson.Value;
-            }
-            else
-            {
-                if (hostConfig.SpikeRunLength.HasValue)
-                    target.RunLength = hostConfig.SpikeRunLength.Value;
-                if (hostConfig.SpikeKOfNK.HasValue)
-                    target.KOfNK = hostConfig.SpikeKOfNK.Value;
-                if (hostConfig.SpikeKOfNN.HasValue)
-                    target.KOfNN = hostConfig.SpikeKOfNN.Value;
-                if (hostConfig.SpikeMadAlpha.HasValue)
-                    target.MadAlpha = hostConfig.SpikeMadAlpha.Value;
-                if (hostConfig.SpikeMinBandAbs.HasValue)
-                    target.MinBandAbs = hostConfig.SpikeMinBandAbs.Value;
-                if (hostConfig.SpikeMinBandRel.HasValue)
-                    target.MinBandRel = hostConfig.SpikeMinBandRel.Value;
-                if (hostConfig.SpikeRollSigmaWindow.HasValue)
-                    target.RollSigmaWindow = hostConfig.SpikeRollSigmaWindow.Value;
-                if (hostConfig.SpikeBaselineWindow.HasValue)
-                    target.BaselineWindow = hostConfig.SpikeBaselineWindow.Value;
-                if (hostConfig.SpikeSigmaCooldown.HasValue)
-                    target.SigmaCooldown = hostConfig.SpikeSigmaCooldown.Value;
-                if (hostConfig.SpikeMinRelShift.HasValue)
-                    target.MinRelShift = hostConfig.SpikeMinRelShift.Value;
-                if (hostConfig.SpikeSampleRows.HasValue)
-                    target.SampleRows = hostConfig.SpikeSampleRows.Value;
-                if (hostConfig.SpikeNearMissFraction.HasValue)
-                    target.NearMissFraction = hostConfig.SpikeNearMissFraction.Value;
-                if (hostConfig.SpikeLogJson.HasValue)
-                    target.LogJson = hostConfig.SpikeLogJson.Value;
-            }
-        }
-
-        ApplySharedTimesFmSettings(resolved.TimesFmChangeSettings);
-        ApplyModeSpecificTimesFmSettings(resolved.TimesFmChangeSettings, isChange: true);
-        ApplySharedTimesFmSettings(resolved.TimesFmSpikeSettings);
-        ApplyModeSpecificTimesFmSettings(resolved.TimesFmSpikeSettings, isChange: false);
-
-        return resolved;
     }
 
     private void LogMlnetDiagnostics(string mode, int monitorIPID, List<AnomalyPrediction> predictions, List<LocalPingInfo> pingInfos, int preTrain)
@@ -339,15 +371,14 @@ public class MonitorMLService : IMonitorMLService
         {
             tfModel.PreTrain = preTrain;
             tfModel.Confidence = confidence;
-            var resolved = _hostParameters.TryGetValue(monitorIPID, out var cached)
-                ? cached
-                : _mlParams.ActiveModelParameters;
+            var resolved = ResolveParametersForBackend(monitorIPID, DetectionBackend.Primary);
             var settings = string.Equals(modelType, "Change", StringComparison.OrdinalIgnoreCase)
                 ? resolved.TimesFmChangeSettings.Clone()
                 : resolved.TimesFmSpikeSettings.Clone();
             tfModel.ApplySettings(settings);
         }
     }
+
     private async Task<IMLModel> GetOrCreateModel(int monitorIPID, string modelType, double confidence, int preTrain)
     {
         var key = (monitorIPID, modelType);
@@ -357,6 +388,54 @@ public class MonitorMLService : IMonitorMLService
             _models[key] = model;
         }
         return model;
+    }
+
+    private async Task EnsureSecondaryModelInitialized(int monitorIPID, string modelType, double confidence, int preTrain)
+    {
+        if (_secondaryModelFactory == null)
+        {
+            throw new InvalidOperationException("Secondary model factory not configured.");
+        }
+        var key = (monitorIPID, modelType);
+        if (!_secondaryModels.ContainsKey(key))
+        {
+            await GetOrCreateSecondaryModel(monitorIPID, modelType, confidence, preTrain);
+        }
+        if (_secondaryModels.TryGetValue(key, out var model) && model is TimesFmRabbitModel tfModel)
+        {
+            tfModel.PreTrain = preTrain;
+            tfModel.Confidence = confidence;
+            var resolved = ResolveParametersForBackend(monitorIPID, DetectionBackend.Secondary);
+            var settings = string.Equals(modelType, "Change", StringComparison.OrdinalIgnoreCase)
+                ? resolved.TimesFmChangeSettings.Clone()
+                : resolved.TimesFmSpikeSettings.Clone();
+            tfModel.ApplySettings(settings);
+        }
+    }
+
+    private async Task<IMLModel> GetOrCreateSecondaryModel(int monitorIPID, string modelType, double confidence, int preTrain)
+    {
+        var key = (monitorIPID, modelType);
+        if (!_secondaryModels.TryGetValue(key, out var model))
+        {
+            model = _secondaryModelFactory!.CreateModel(modelType, monitorIPID, confidence, preTrain);
+            _secondaryModels[key] = model;
+        }
+        return model;
+    }
+
+    private ResolvedModelParameters ResolveParametersForBackend(int monitorIPID, DetectionBackend backend)
+    {
+        if (_hostParameters.TryGetValue(monitorIPID, out var bundle))
+        {
+            return backend == DetectionBackend.Primary
+                ? bundle.Primary
+                : bundle.Secondary ?? _mlParams.SecondaryModelParameters;
+        }
+
+        return backend == DetectionBackend.Primary
+            ? _mlParams.ActiveModelParameters
+            : _mlParams.SecondaryModelParameters;
     }
     public async Task<ResultObj> ProcessAllHosts()
     {
@@ -467,21 +546,50 @@ public class MonitorMLService : IMonitorMLService
             result.Success = true;
             int monitorIPID = monitorPingInfo.MonitorIPID;
             int dataSetID = monitorPingInfo.DataSetID;
-            var resolvedParams = ResolveParameters(monitorPingInfo.ModelConfig);
-            monitorPingInfo.EffectiveModelParameters = resolvedParams;
-            _hostParameters.AddOrUpdate(monitorIPID, resolvedParams, (_, _) => resolvedParams);
-            var changeDetectionResult = await InitChangeDetection(monitorPingInfo);
-            var spikeDetectionResult = await InitSpikeDetection(monitorPingInfo);
+            var resolvedBundle = ResolveParameters(monitorPingInfo.ModelConfig);
+            monitorPingInfo.EffectiveModelParameters = resolvedBundle.Primary;
+            _hostParameters.AddOrUpdate(monitorIPID, resolvedBundle, (_, _) => resolvedBundle);
+
+            var primaryChangeResult = await InitChangeDetectionCore(monitorPingInfo, resolvedBundle.Primary, DetectionBackend.Primary, applyLatch: true);
+            var primarySpikeResult = await InitSpikeDetectionCore(monitorPingInfo, resolvedBundle.Primary, DetectionBackend.Primary, applyLatch: true);
+
+            var finalChangeResult = primaryChangeResult;
+            var finalSpikeResult = primarySpikeResult;
+            DetectionResult? secondaryChangeResult = null;
+            DetectionResult? secondarySpikeResult = null;
+
+            bool primaryGate = primaryChangeResult.IsIssueDetected && primarySpikeResult.IsIssueDetected;
+            bool finalAlertFlag;
+
+            if (_isHybrid && primaryGate && primaryChangeResult.Result.Success && primarySpikeResult.Result.Success)
+            {
+                var secondaryParams = resolvedBundle.Secondary ?? _mlParams.SecondaryModelParameters.Clone();
+                monitorPingInfo.EffectiveModelParameters = secondaryParams;
+                secondaryChangeResult = await InitChangeDetectionCore(monitorPingInfo, secondaryParams, DetectionBackend.Secondary, applyLatch: false);
+                secondarySpikeResult = await InitSpikeDetectionCore(monitorPingInfo, secondaryParams, DetectionBackend.Secondary, applyLatch: false);
+                monitorPingInfo.EffectiveModelParameters = resolvedBundle.Primary;
+                finalChangeResult = secondaryChangeResult;
+                finalSpikeResult = secondarySpikeResult;
+                finalAlertFlag = secondaryChangeResult.Result.Success && secondarySpikeResult.Result.Success &&
+                                 (secondaryChangeResult.IsIssueDetected || secondarySpikeResult.IsIssueDetected);
+            }
+            else
+            {
+                finalAlertFlag = primaryGate && primaryChangeResult.Result.Success && primarySpikeResult.Result.Success;
+            }
+
             var updateTimestamp = monitorPingInfo.DateEnded ?? DateTime.UtcNow;
             var windowConfig = _windowManager.Update(
                 monitorIPID,
-                new AdaptiveWindowManager.DetectionSnapshot(changeDetectionResult.IsIssueDetected, changeDetectionResult.NumberOfDetections, changeDetectionResult.MaxMartingaleValue),
-                new AdaptiveWindowManager.DetectionSnapshot(spikeDetectionResult.IsIssueDetected, spikeDetectionResult.NumberOfDetections, spikeDetectionResult.MaxMartingaleValue),
+                new AdaptiveWindowManager.DetectionSnapshot(finalChangeResult.IsIssueDetected, finalChangeResult.NumberOfDetections, finalChangeResult.MaxMartingaleValue),
+                new AdaptiveWindowManager.DetectionSnapshot(finalSpikeResult.IsIssueDetected, finalSpikeResult.NumberOfDetections, finalSpikeResult.MaxMartingaleValue),
                 updateTimestamp);
-            var combinedAnalysis = AnalyzeResults(changeDetectionResult, spikeDetectionResult);
-            result.Success = changeDetectionResult.Result.Success && spikeDetectionResult.Result.Success;
+
+            var combinedAnalysis = BuildHybridAnalysis(primaryChangeResult, primarySpikeResult, secondaryChangeResult, secondarySpikeResult, primaryGate, finalAlertFlag);
+            result.Success = (primaryChangeResult.Result.Success && primarySpikeResult.Result.Success) &&
+                             (!(_isHybrid && primaryGate) || (secondaryChangeResult?.Result.Success ?? true) && (secondarySpikeResult?.Result.Success ?? true));
             result.Message = combinedAnalysis;
-            result.Data = (changeDetectionResult, spikeDetectionResult);
+            result.Data = (finalChangeResult, finalSpikeResult);
             _logger.LogDebug($"Combined analysis for MonitorIPID {monitorIPID}: {combinedAnalysis}");
             _logger.LogDebug("Adaptive windows after run monitor={Monitor} changeWindow={ChangeWindow} spikeWindow={SpikeWindow}", monitorIPID, windowConfig.ChangeWindow, windowConfig.SpikeWindow);
             var predictStatus = monitorPingInfo.PredictStatus;
@@ -500,15 +608,15 @@ public class MonitorMLService : IMonitorMLService
             predictStatus = monitorPingInfo.PredictStatus;
             if (predictStatus != null)
             {
-                predictStatus.ChangeDetectionResult = changeDetectionResult;
-                predictStatus.SpikeDetectionResult = spikeDetectionResult;
+                predictStatus.ChangeDetectionResult = finalChangeResult;
+                predictStatus.SpikeDetectionResult = finalSpikeResult;
                 predictStatus.EventTime = monitorPingInfo.DateEnded;
-                predictStatus.AlertFlag = changeDetectionResult.IsIssueDetected && spikeDetectionResult.IsIssueDetected;
+                predictStatus.AlertFlag = finalAlertFlag;
                 if (predictStatus.AlertFlag)
                 {
                     _logger.LogInformation($"MonitorPingInfo: {monitorPingInfo.ID} - {combinedAnalysis}");
                 }
-                else if (changeDetectionResult.IsIssueDetected || spikeDetectionResult.IsIssueDetected)
+                else if (primaryChangeResult.IsIssueDetected || primarySpikeResult.IsIssueDetected)
                 {
                     _logger.LogInformation($"MonitorPingInfo: {monitorPingInfo.ID} - Detection present but alert suppressed (requires spike and change). Details: {combinedAnalysis}");
                 }
@@ -547,6 +655,30 @@ public class MonitorMLService : IMonitorMLService
         var monitorPingInfo = await _monitorMLDataRepo.GetMonitorPingInfo(monitorIPID, fetchWindow, dataSetID);
         return await CheckHost(monitorPingInfo);
     }
+    private string BuildHybridAnalysis(
+        DetectionResult primaryChange,
+        DetectionResult primarySpike,
+        DetectionResult? secondaryChange,
+        DetectionResult? secondarySpike,
+        bool primaryGate,
+        bool finalAlert)
+    {
+        var primarySummary = AnalyzeResults(primaryChange, primarySpike);
+        if (!_isHybrid)
+        {
+            return primarySummary;
+        }
+
+        if (!primaryGate || secondaryChange == null || secondarySpike == null)
+        {
+            return $"Primary (MicrosoftMLTS): {primarySummary} Secondary (TimesFM) skipped (primary gate not met).";
+        }
+
+        var secondarySummary = AnalyzeResults(secondaryChange, secondarySpike);
+        var verdict = finalAlert ? "TimesFM confirmed alert." : "TimesFM vetoed alert.";
+        return $"Primary (MicrosoftMLTS): {primarySummary} Secondary (TimesFM): {secondarySummary} Outcome: {verdict}";
+    }
+
     private string AnalyzeResults(DetectionResult changeDetectionResult, DetectionResult spikeDetectionResult)
     {
         // Combining results from both models
@@ -664,11 +796,17 @@ public class MonitorMLService : IMonitorMLService
     }
     public async Task<DetectionResult> InitChangeDetection(MonitorPingInfo monitorPingInfo)
     {
+        var resolvedParameters = monitorPingInfo.EffectiveModelParameters ?? _mlParams.ActiveModelParameters;
+        return await InitChangeDetectionCore(monitorPingInfo, resolvedParameters, DetectionBackend.Primary, applyLatch: true);
+    }
+
+    private async Task<DetectionResult> InitChangeDetectionCore(MonitorPingInfo monitorPingInfo, ResolvedModelParameters resolvedParams, DetectionBackend backend, bool applyLatch)
+    {
         int monitorIPID = monitorPingInfo.MonitorIPID;
         var detectionResult = new DetectionResult();
         try
         {
-            if (TryReuseLatchedDetection(monitorPingInfo, isChange: true, out var latched))
+            if (applyLatch && TryReuseLatchedDetection(monitorPingInfo, isChange: true, out var latched))
                 return latched;
             if (!CheckMonitorPingInfoOK(monitorPingInfo, monitorIPID, detectionResult))
             {
@@ -676,15 +814,14 @@ public class MonitorMLService : IMonitorMLService
             }
             var localPingInfos = GetLocalPingInfos(monitorPingInfo!);
             var config = _windowManager.GetConfig(monitorIPID);
-            var changeParams = monitorPingInfo.EffectiveModelParameters ?? _mlParams.ActiveModelParameters;
-            var changeConfidence = changeParams.ChangeConfidence;
-            var changePreTrain = changeParams.ChangePreTrain;
-            var changeWindow = changeParams.PredictWindow > 0 ? changeParams.PredictWindow : config.ChangeWindow;
+            var changeConfidence = resolvedParams.ChangeConfidence;
+            var changePreTrain = resolvedParams.ChangePreTrain;
+            var changeWindow = resolvedParams.PredictWindow > 0 ? resolvedParams.PredictWindow : config.ChangeWindow;
             changeWindow = Math.Max(1, changeWindow);
             var changeMaxWindow = Math.Max(config.MaxChangeWindow, changeWindow);
             changePreTrain = Math.Clamp(changePreTrain, 1, Math.Max(1, changeWindow - 1));
 
-            _logger.LogDebug("Window config before change detection monitor={Monitor} changeWindow={ChangeWindow} changePreTrain={ChangePreTrain} spikeWindow={SpikeWindow} spikePreTrain={SpikePreTrain}", monitorIPID, changeWindow, changePreTrain, config.SpikeWindow, config.SpikePreTrain);
+            _logger.LogDebug("Window config before {Backend} change detection monitor={Monitor} changeWindow={ChangeWindow} changePreTrain={ChangePreTrain} spikeWindow={SpikeWindow} spikePreTrain={SpikePreTrain}", backend, monitorIPID, changeWindow, changePreTrain, config.SpikeWindow, config.SpikePreTrain);
 
             localPingInfos = TrimWindow(localPingInfos, changeWindow, changeMaxWindow, changePreTrain);
             if (!HasSufficientUsableData("change", monitorIPID, localPingInfos, changeWindow, changePreTrain, detectionResult))
@@ -692,25 +829,40 @@ public class MonitorMLService : IMonitorMLService
                 detectionResult.IsDataLimited = true;
                 return detectionResult;
             }
-            await EnsureModelInitialized(monitorIPID, "Change", changeConfidence, changePreTrain);
-            detectionResult = PredictForHostChange(localPingInfos, monitorIPID);
-            _logger.LogDebug($"Change detection for MonitorPingInfoID {monitorPingInfo.ID}");
+
+            if (backend == DetectionBackend.Primary)
+            {
+                await EnsureModelInitialized(monitorIPID, "Change", changeConfidence, changePreTrain);
+            }
+            else
+            {
+                await EnsureSecondaryModelInitialized(monitorIPID, "Change", changeConfidence, changePreTrain);
+            }
+
+            detectionResult = PredictForHostChange(localPingInfos, monitorIPID, backend);
+            _logger.LogDebug("Change detection ({Backend}) for MonitorPingInfoID {MonitorPingInfoId}", backend, monitorPingInfo.ID);
         }
         catch (Exception e)
         {
             detectionResult.Result.Success = false;
-            detectionResult.Result.Message = $" Error : Could not run InitSpikeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
+            detectionResult.Result.Message = $" Error : Could not run {(backend == DetectionBackend.Primary ? "InitChangeDetection" : "TimesFM verification change detection")} for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
             return detectionResult;
         }
         return detectionResult;
     }
     public async Task<DetectionResult> InitSpikeDetection(MonitorPingInfo monitorPingInfo)
     {
+        var resolvedParameters = monitorPingInfo.EffectiveModelParameters ?? _mlParams.ActiveModelParameters;
+        return await InitSpikeDetectionCore(monitorPingInfo, resolvedParameters, DetectionBackend.Primary, applyLatch: true);
+    }
+
+    private async Task<DetectionResult> InitSpikeDetectionCore(MonitorPingInfo monitorPingInfo, ResolvedModelParameters resolvedParams, DetectionBackend backend, bool applyLatch)
+    {
         int monitorIPID = monitorPingInfo.MonitorIPID;
         var detectionResult = new DetectionResult();
         try
         {
-            if (TryReuseLatchedDetection(monitorPingInfo, isChange: false, out var latched))
+            if (applyLatch && TryReuseLatchedDetection(monitorPingInfo, isChange: false, out var latched))
                 return latched;
             if (!CheckMonitorPingInfoOK(monitorPingInfo, monitorIPID, detectionResult))
             {
@@ -718,16 +870,15 @@ public class MonitorMLService : IMonitorMLService
             }
             var originalLocalPingInfos = GetLocalPingInfos(monitorPingInfo!);
             var config = _windowManager.GetConfig(monitorIPID);
-            var spikeParams = monitorPingInfo.EffectiveModelParameters ?? _mlParams.ActiveModelParameters;
-            var spikeConfidence = spikeParams.SpikeConfidence;
-            var spikePreTrain = spikeParams.SpikePreTrain;
-            var spikeWindow = spikeParams.PredictWindow > 0 ? spikeParams.PredictWindow : config.SpikeWindow;
+            var spikeConfidence = resolvedParams.SpikeConfidence;
+            var spikePreTrain = resolvedParams.SpikePreTrain;
+            var spikeWindow = resolvedParams.PredictWindow > 0 ? resolvedParams.PredictWindow : config.SpikeWindow;
             spikeWindow = Math.Max(1, spikeWindow);
             var spikeMaxWindow = Math.Max(config.MaxSpikeWindow, spikeWindow);
-            var spikeThreshold = spikeParams.SpikeDetectionThreshold > 0 ? spikeParams.SpikeDetectionThreshold : SpikeDetectionThreshold;
+            var spikeThreshold = resolvedParams.SpikeDetectionThreshold > 0 ? resolvedParams.SpikeDetectionThreshold : SpikeDetectionThreshold;
             spikePreTrain = Math.Clamp(spikePreTrain, 1, Math.Max(1, spikeWindow - 1));
 
-            _logger.LogDebug("Window config before spike detection monitor={Monitor} changeWindow={ChangeWindow} changePreTrain={ChangePreTrain} spikeWindow={SpikeWindow} spikePreTrain={SpikePreTrain}", monitorIPID, config.ChangeWindow, config.ChangePreTrain, spikeWindow, spikePreTrain);
+            _logger.LogDebug("Window config before {Backend} spike detection monitor={Monitor} changeWindow={ChangeWindow} changePreTrain={ChangePreTrain} spikeWindow={SpikeWindow} spikePreTrain={SpikePreTrain}", backend, monitorIPID, config.ChangeWindow, config.ChangePreTrain, spikeWindow, spikePreTrain);
 
             var trimmedLocalPingInfos = TrimWindow(originalLocalPingInfos, spikeWindow, spikeMaxWindow, spikePreTrain);
             if (!HasSufficientUsableData("spike", monitorIPID, trimmedLocalPingInfos, spikeWindow, spikePreTrain, detectionResult))
@@ -735,8 +886,17 @@ public class MonitorMLService : IMonitorMLService
                 detectionResult.IsDataLimited = true;
                 return detectionResult;
             }
-            await EnsureModelInitialized(monitorIPID, "Spike", spikeConfidence, spikePreTrain);
-            detectionResult = PredictForHostSpike(trimmedLocalPingInfos, monitorIPID, spikeThreshold);
+
+            if (backend == DetectionBackend.Primary)
+            {
+                await EnsureModelInitialized(monitorIPID, "Spike", spikeConfidence, spikePreTrain);
+            }
+            else
+            {
+                await EnsureSecondaryModelInitialized(monitorIPID, "Spike", spikeConfidence, spikePreTrain);
+            }
+
+            detectionResult = PredictForHostSpike(trimmedLocalPingInfos, monitorIPID, spikeThreshold, backend);
 
             bool trimmedApplied = trimmedLocalPingInfos.Count != originalLocalPingInfos.Count;
             if (!detectionResult.IsIssueDetected
@@ -744,15 +904,22 @@ public class MonitorMLService : IMonitorMLService
                 && trimmedApplied
                 && config.SpikeWindow < config.MaxSpikeWindow)
             {
-                await EnsureModelInitialized(monitorIPID, "Spike", spikeConfidence, spikePreTrain);
-                detectionResult = PredictForHostSpike(originalLocalPingInfos, monitorIPID, spikeThreshold);
+                if (backend == DetectionBackend.Primary)
+                {
+                    await EnsureModelInitialized(monitorIPID, "Spike", spikeConfidence, spikePreTrain);
+                }
+                else
+                {
+                    await EnsureSecondaryModelInitialized(monitorIPID, "Spike", spikeConfidence, spikePreTrain);
+                }
+                detectionResult = PredictForHostSpike(originalLocalPingInfos, monitorIPID, spikeThreshold, backend);
             }
-            _logger.LogDebug($"Spike detection for MonitorPingInfoID {monitorPingInfo.ID}");
+            _logger.LogDebug("Spike detection ({Backend}) for MonitorPingInfoID {MonitorPingInfoId}", backend, monitorPingInfo.ID);
         }
         catch (Exception e)
         {
             detectionResult.Result.Success = false;
-            detectionResult.Result.Message = $" Error : Could not run InitSpikeDetection for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
+            detectionResult.Result.Message = $" Error : Could not run {(backend == DetectionBackend.Primary ? "InitSpikeDetection" : "TimesFM verification spike detection")} for MonitorPingInfo with ID {monitorIPID} . Error was : {e.Message}";
             return detectionResult;
         }
         return detectionResult;
@@ -841,14 +1008,18 @@ public class MonitorMLService : IMonitorMLService
         }*/
         return localPingInfos;
     }
-    public DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos, int monitorIPID)
+    private Dictionary<(int monitorIPID, string modelType), IMLModel> GetModelDictionary(DetectionBackend backend)
+        => backend == DetectionBackend.Primary ? _models : _secondaryModels;
+
+    private DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos, int monitorIPID, DetectionBackend backend)
     {
         var result = new DetectionResult();
-        var modelType = "Change"; // Define model type
+        var modelType = "Change";
+        var models = GetModelDictionary(backend);
         var key = (monitorIPID, modelType);
-        if (!_models.TryGetValue(key, out var model))
+        if (!models.TryGetValue(key, out var model))
         {
-            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found.");
+            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found for backend {backend}.");
         }
         var predictions = model.PredictList(localPingInfos).ToList();
         result.IsIssueDetected = predictions.Any(p => p.Prediction[0] == 1);
@@ -869,22 +1040,24 @@ public class MonitorMLService : IMonitorMLService
         {
             result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
         }
-        var changeParams = _hostParameters.TryGetValue(monitorIPID, out var changeResolved)
-            ? changeResolved
-            : _mlParams.ActiveModelParameters;
+        var changeParams = ResolveParametersForBackend(monitorIPID, backend);
         LogMlnetDiagnostics("change", monitorIPID, predictions, localPingInfos, changeParams.ChangePreTrain);
         result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at {dateOfDetection}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
         result.Result.Success = true;
         return result;
     }
-    public DetectionResult PredictForHostChange(LocalPingInfo input, int monitorIPID)
+
+    public DetectionResult PredictForHostChange(List<LocalPingInfo> localPingInfos, int monitorIPID)
+        => PredictForHostChange(localPingInfos, monitorIPID, DetectionBackend.Primary);
+    private DetectionResult PredictForHostChange(LocalPingInfo input, int monitorIPID, DetectionBackend backend)
     {
         var result = new DetectionResult();
         var modelType = "Change";
+        var models = GetModelDictionary(backend);
         var key = (monitorIPID, modelType);
-        if (!_models.TryGetValue(key, out var model))
+        if (!models.TryGetValue(key, out var model))
         {
-            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found.");
+            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found for backend {backend}.");
         }
         var prediction = model.Predict(input);
         result.IsIssueDetected = prediction.Prediction[0] == 1;
@@ -904,14 +1077,15 @@ public class MonitorMLService : IMonitorMLService
         result.Result.Success = true;
         return result;
     }
-    public DetectionResult PredictForHostSpike(LocalPingInfo input, int monitorIPID)
+    private DetectionResult PredictForHostSpike(LocalPingInfo input, int monitorIPID, DetectionBackend backend)
     {
         var result = new DetectionResult();
         var modelType = "Spike";
+        var models = GetModelDictionary(backend);
         var key = (monitorIPID, modelType);
-        if (!_models.TryGetValue(key, out var model))
+        if (!models.TryGetValue(key, out var model))
         {
-            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found.");
+            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found for backend {backend}.");
         }
         var prediction = model.Predict(input);
         result.IsIssueDetected = prediction.Prediction[0] == 1;
@@ -930,14 +1104,19 @@ public class MonitorMLService : IMonitorMLService
         result.Result.Success = true;
         return result;
     }
-    public DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos, int monitorIPID, int spikeDetectionThreshold)
+
+    public DetectionResult PredictForHostSpike(LocalPingInfo input, int monitorIPID)
+        => PredictForHostSpike(input, monitorIPID, DetectionBackend.Primary);
+
+    private DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos, int monitorIPID, int spikeDetectionThreshold, DetectionBackend backend)
     {
         var result = new DetectionResult();
-        var modelType = "Spike"; // Define model type
+        var modelType = "Spike";
+        var models = GetModelDictionary(backend);
         var key = (monitorIPID, modelType);
-        if (!_models.TryGetValue(key, out var model))
+        if (!models.TryGetValue(key, out var model))
         {
-            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found.");
+            throw new InvalidOperationException($"Model for MonitorIPID {monitorIPID} and ModelType {modelType} not found for backend {backend}.");
         }
         var predictions = model.PredictList(localPingInfos).ToList();
         result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
@@ -957,14 +1136,18 @@ public class MonitorMLService : IMonitorMLService
         {
             result.MaxMartingaleValue = predictions.Max(p => p.Prediction[3]);
         }
-        var resolvedParams = _hostParameters.TryGetValue(monitorIPID, out var hostParams)
-            ? hostParams
-            : _mlParams.ActiveModelParameters;
+        var resolvedParams = ResolveParametersForBackend(monitorIPID, backend);
         LogMlnetDiagnostics("spike", monitorIPID, predictions, localPingInfos, resolvedParams.SpikePreTrain);
         result.Result.Message = $"Success: Ran OK. {(result.IsIssueDetected ? $"An issue was detected at {dateOfDetection}" : "No issues detected")} with {result.NumberOfDetections} number of detections.";
         result.Result.Success = true;
         return result;
     }
+
+    public DetectionResult PredictForHostSpike(List<LocalPingInfo> localPingInfos, int monitorIPID, int spikeDetectionThreshold)
+        => PredictForHostSpike(localPingInfos, monitorIPID, spikeDetectionThreshold, DetectionBackend.Primary);
+
+    public DetectionResult PredictForHostChange(LocalPingInfo input, int monitorIPID)
+        => PredictForHostChange(input, monitorIPID, DetectionBackend.Primary);
     public async Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj)
     {
         ResultObj result = new ResultObj();

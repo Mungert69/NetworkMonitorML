@@ -220,6 +220,16 @@ public class MonitorMLTestData
 
         return mlParams;
     }
+
+    public static MLParams GetHybridMLParams()
+    {
+        var mlParams = GetMLParams();
+        mlParams.ModelSelection = "Hybrid";
+        mlParams.PrimaryModelSelection = "MicrosoftMLTS";
+        mlParams.SecondaryModelSelection = "TimesFM";
+        mlParams.SecondaryModelParameters = mlParams.ActiveModelParameters.Clone();
+        return mlParams;
+    }
     public static List<ProcessorObj> GetProcesorList()
     {
         var processorList = new List<ProcessorObj>();

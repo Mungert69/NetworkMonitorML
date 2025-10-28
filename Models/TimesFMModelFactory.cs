@@ -8,7 +8,7 @@ using NetworkMonitor.Objects;
 
 namespace NetworkMonitor.ML.Model;
 
-public sealed class TimesFmModelFactory : IMLModelFactory
+public sealed class TimesFmModelFactory : ISecondaryModelFactory
 {
     private readonly IRabbitRepo _rabbitRepo;
     private readonly SystemUrl _sys;
@@ -30,9 +30,11 @@ public sealed class TimesFmModelFactory : IMLModelFactory
     public IMLModel CreateModel(string modelType, int monitorPingInfoID, double confidence, int preTrain)
     {
         var log = _lf.CreateLogger<TimesFmRabbitModel>();
+        var useSecondary = !string.IsNullOrEmpty(_mlParams.SecondaryModelSelection);
+        var sourceParams = useSecondary ? _mlParams.SecondaryModelParameters : _mlParams.ActiveModelParameters;
         var baseSettings = string.Equals(modelType, "change", StringComparison.OrdinalIgnoreCase)
-            ? _mlParams.ActiveModelParameters.TimesFmChangeSettings.Clone()
-            : _mlParams.ActiveModelParameters.TimesFmSpikeSettings.Clone();
+            ? sourceParams.TimesFmChangeSettings.Clone()
+            : sourceParams.TimesFmSpikeSettings.Clone();
         return new TimesFmRabbitModel(
             _rabbitRepo,
             _sys,
