@@ -1120,7 +1120,7 @@ public class MonitorMLService : IMonitorMLService
         }
         var predictions = model.PredictList(localPingInfos).ToList();
         result.NumberOfDetections = predictions.Count(p => p.Prediction[0] == 1);
-        result.IsIssueDetected = result.NumberOfDetections > spikeDetectionThreshold;
+        result.IsIssueDetected = result.NumberOfDetections >= spikeDetectionThreshold;
         string dateOfDetection = "N/A";
         // Check if there are any detections before calculating average and minimum
         if (result.NumberOfDetections > 0)
