@@ -5,7 +5,8 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ContainerBaseImage>mcr.microsoft.com/dotnet/aspnet:10.0</ContainerBaseImage>
-    
+         <RollForward>Minor</RollForward>
+
       <IsPublishable>true</IsPublishable>
   <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
     <ContainerImageTag>0.4.0</ContainerImageTag>
