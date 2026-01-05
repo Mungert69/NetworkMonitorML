@@ -9,7 +9,7 @@
 
       <IsPublishable>true</IsPublishable>
   <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
-    <ContainerImageTag>0.4.0</ContainerImageTag>
+    <ContainerImageTag>0.4.1</ContainerImageTag>
     <StartupObject>NetworkMonitor.ML.Program</StartupObject>
     <Optimize Condition="'$(Publishing)' == 'true'">true</Optimize>
     <Optimize Condition="'$(Publishing)' != 'true'">false</Optimize>
