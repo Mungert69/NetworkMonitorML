@@ -13,9 +13,9 @@
     <!-- Framework-dependent container base (console app) -->
     <ContainerBaseImage>mcr.microsoft.com/dotnet/runtime:10.0</ContainerBaseImage>
 
-    <!-- x64 only due to MKL.NET.linux-x64 / TF.NET native bits -->
-    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
-    <ContainerRuntimeIdentifiers>linux-x64</ContainerRuntimeIdentifiers>
+    <!-- Default RIDs; MKL is gated to x64 to avoid shipping wrong native bits -->
+    <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
+    <ContainerRuntimeIdentifiers>linux-x64;linux-arm64</ContainerRuntimeIdentifiers>
 
     <RollForward>Minor</RollForward>
     <StartupObject>NetworkMonitor.ML.Program</StartupObject>
@@ -38,7 +38,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" Version="4.0.3" />
     <PackageReference Include="Microsoft.ML.TimeSeries" Version="4.0.3" />
-    <PackageReference Include="MKL.NET.linux-x64" Version="2022.0.1.117" />
+    <PackageReference Include="MKL.NET.linux-x64" Version="2022.0.1.117"
+                      Condition="'$(RuntimeIdentifier)' == 'linux-x64'" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="TensorFlow.NET" Version="0.150.0" />
      <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
