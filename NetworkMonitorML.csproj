@@ -1,29 +1,39 @@
 <Project Sdk="Microsoft.NET.Sdk">
-
-	<PropertyGroup>
-		 <OutputType>Exe</OutputType>
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
-    <ContainerBaseImage>mcr.microsoft.com/dotnet/aspnet:10.0</ContainerBaseImage>
-         <RollForward>Minor</RollForward>
 
-      <IsPublishable>true</IsPublishable>
-  <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
-    <ContainerImageTag>0.4.1</ContainerImageTag>
+    <!-- Containerization -->
+    <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
+    <PublishProfile>DefaultContainer</PublishProfile>
+    <ContainerImageTag>0.4.2</ContainerImageTag>
+    <ContainerImageFormat>OCI</ContainerImageFormat>
+
+    <!-- Framework-dependent container base (console app) -->
+    <ContainerBaseImage>mcr.microsoft.com/dotnet/runtime:10.0</ContainerBaseImage>
+
+    <!-- x64 only due to MKL.NET.linux-x64 / TF.NET native bits -->
+    <RuntimeIdentifiers>linux-x64</RuntimeIdentifiers>
+    <ContainerRuntimeIdentifiers>linux-x64</ContainerRuntimeIdentifiers>
+
+    <RollForward>Minor</RollForward>
     <StartupObject>NetworkMonitor.ML.Program</StartupObject>
     <Optimize Condition="'$(Publishing)' == 'true'">true</Optimize>
     <Optimize Condition="'$(Publishing)' != 'true'">false</Optimize>
   </PropertyGroup>
-<PropertyGroup Condition="'$(Configuration)'=='Release-Dev'">
+
+  <PropertyGroup Condition="'$(Configuration)'=='Release-Dev'">
     <DefineConstants>DEV</DefineConstants>
-        <Optimize>true</Optimize>
-        <ContainerRepository>mungert/networkmonitorpredict-dev</ContainerRepository>
-</PropertyGroup>
- <!-- Conditional AOT and optimization for Release configuration -->
+    <Optimize>true</Optimize>
+    <ContainerRepository>mungert/networkmonitorpredict-dev</ContainerRepository>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <Optimize>true</Optimize>
     <ContainerRepository>mungert/networkmonitorpredict</ContainerRepository>
   </PropertyGroup>
+
 
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" Version="4.0.3" />
