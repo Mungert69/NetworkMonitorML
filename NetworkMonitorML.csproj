@@ -21,6 +21,8 @@
     <StartupObject>NetworkMonitor.ML.Program</StartupObject>
     <Optimize Condition="'$(Publishing)' == 'true'">true</Optimize>
     <Optimize Condition="'$(Publishing)' != 'true'">false</Optimize>
+    <!-- ML.NET hard-codes x86/x64 in its build check; allow arm64 builds -->
+    <EnableMLUnsupportedPlatformTargetCheck Condition="'$(RuntimeIdentifier)' == 'linux-arm64'">false</EnableMLUnsupportedPlatformTargetCheck>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)'=='Release-Dev'">
