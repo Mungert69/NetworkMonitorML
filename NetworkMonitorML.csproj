@@ -11,7 +11,7 @@
     <ContainerImageFormat>OCI</ContainerImageFormat>
 
     <!-- Framework-dependent container base (console app) -->
-    <ContainerBaseImage>mcr.microsoft.com/dotnet/runtime:10.0</ContainerBaseImage>
+    <ContainerBaseImage>mcr.microsoft.com/dotnet/aspnet:10.0</ContainerBaseImage>
 
     <!-- Default RIDs; MKL is gated to x64 to avoid shipping wrong native bits -->
     <RuntimeIdentifiers>linux-x64;linux-arm64</RuntimeIdentifiers>
