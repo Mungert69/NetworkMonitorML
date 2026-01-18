@@ -40,8 +40,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" Version="4.0.3" />
     <PackageReference Include="Microsoft.ML.TimeSeries" Version="4.0.3" />
-    <PackageReference Include="MKL.NET.linux-x64" Version="2022.0.1.117"
-                      Condition="'$(RuntimeIdentifier)' == 'linux-x64'" />
+    <PackageReference Include="MKL.NET.linux-x64" Version="2022.0.1.117" Condition="'$(RuntimeIdentifier)' == 'linux-x64'" />
     <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="TensorFlow.NET" Version="0.150.0" />
      <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.0.1" />
@@ -54,7 +53,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.11" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.InMemory" Version="9.0.12" />
 
   </ItemGroup>
 
