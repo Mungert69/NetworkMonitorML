@@ -494,11 +494,11 @@ public class MonitorMLService : IMonitorMLService
         TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>> result = new TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>();
         result.Message = " SERVICE : CheckLatestHosts : ";
         result.Success = true;
+        _isRunning = true;
         try
         {
             // Assuming there's a method to get the latest MonitorPingInfos with a specified window size
             // This method needs to be implemented in the IMonitorMLDataRepo and MonitorMLDataRepo
-            _isRunning = true;
             var latestMonitorPingInfos = await _monitorMLDataRepo.GetLatestMonitorPingInfos(_mlParams.PredictWindow);
             if (latestMonitorPingInfos == null || !latestMonitorPingInfos.Any())
             {
@@ -535,7 +535,10 @@ public class MonitorMLService : IMonitorMLService
             result.Message = $"Error in CheckLatestHosts: {ex.Message}";
             _logger.LogError(result.Message);
         }
-        _isRunning = false;
+        finally
+        {
+            _isRunning = false;
+        }
         return result;
     }
     public async Task<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>> CheckHost(MonitorPingInfo? monitorPingInfo)

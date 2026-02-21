@@ -319,6 +319,30 @@ namespace NetworkMonitor.MonitorML.Tests
 #pragma warning restore CS8602 // Nullable warning           
         }
 
+        [Fact]
+        public async Task CheckLatestHostsTest_NoData_DoesNotLatchBusyState()
+        {
+            var systemParams = MonitorMLTestData.GetSystemParams();
+            var mlParams = MonitorMLTestData.GetMLParams();
+            _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+            _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
+
+            _monitorMLDataRepoMock.Setup(repo => repo.GetLatestMonitorPingInfos(It.IsAny<int>()))
+                                  .ReturnsAsync(new List<MonitorPingInfo>());
+
+            IMLModelFactory mlModelFactory = new MLModelFactory();
+            var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object);
+
+            var first = await service.CheckLatestHostsTest();
+            var second = await service.CheckLatestHostsTest();
+
+            Assert.False(first.Success);
+            Assert.Equal("No latest MonitorPingInfo records found.", first.Message);
+            Assert.False(second.Success);
+            Assert.Equal("No latest MonitorPingInfo records found.", second.Message);
+            Assert.DoesNotContain("Predict service busy", second.Message);
+        }
+
 
     
 
