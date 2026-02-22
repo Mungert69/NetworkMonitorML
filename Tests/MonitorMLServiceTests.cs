@@ -85,6 +85,7 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(detectionResult.SpikeResult.NumberOfDetections == 3, "Three spikes not detected.");
             Assert.True(detectionResult.SpikeResult.AverageScore == 1000, "The average score is out of the expected range.");
             Assert.False(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? true, "Alert should remain false when only spike detection fires.");
+            Assert.Equal(0, mockMonitorPingInfo.PredictStatus?.DownCount ?? -1);
 
         }
 
@@ -134,6 +135,7 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(detectionResult.ChangeResult.IsIssueDetected, "A change was not detected.");
             Assert.True(detectionResult.ChangeResult.NumberOfDetections == 1, $"{detectionResult.ChangeResult.NumberOfDetections} changes detected.");
             Assert.False(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? true, "Alert should remain false until both change and spike detections fire.");
+            Assert.Equal(0, mockMonitorPingInfo.PredictStatus?.DownCount ?? -1);
             //Assert.InRange(changeResult.MinPValue, 0, pValueThreshold, "The minimum p-value is out of the expected range.");
             // Adjust 'thresholdLow', 'thresholdHigh', and 'pValueThreshold' according to your expectations
         }
@@ -185,6 +187,7 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.True(detectionResult.SpikeResult.NumberOfDetections == 4, "Five spikes not detected.");
             Assert.True(detectionResult.SpikeResult.AverageScore == 767.5, "The average score is out of the expected range.");
             Assert.True(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? false, "Alert should be raised when both spike and change detections align.");
+            Assert.Equal(1, mockMonitorPingInfo.PredictStatus?.DownCount ?? -1);
         }
 
         [Fact]
@@ -221,6 +224,7 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.False(result.Data.ChangeResult.IsIssueDetected);
             Assert.True(result.Data.SpikeResult.IsIssueDetected);
             Assert.True(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? false);
+            Assert.Equal(1, mockMonitorPingInfo.PredictStatus?.DownCount ?? -1);
             Assert.Contains("Secondary (TimesFM)", result.Message);
         }
 
@@ -258,7 +262,24 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.False(result.Data.ChangeResult.IsIssueDetected);
             Assert.False(result.Data.SpikeResult.IsIssueDetected);
             Assert.False(mockMonitorPingInfo.PredictStatus?.AlertFlag ?? true);
+            Assert.Equal(0, mockMonitorPingInfo.PredictStatus?.DownCount ?? -1);
             Assert.Contains("TimesFM vetoed alert", result.Message);
+        }
+
+        [Fact]
+        public void PredictStatus_DownCount_UsesStoredValue_NotDerivedFromDetections()
+        {
+            var status = new PredictStatus
+            {
+                ChangeDetectionResult = new DetectionResult { IsIssueDetected = true },
+                SpikeDetectionResult = new DetectionResult { IsIssueDetected = true }
+            };
+
+            status.DownCount = 0;
+            Assert.Equal(0, status.DownCount);
+
+            status.DownCount = 1;
+            Assert.Equal(1, status.DownCount);
         }
 
         [Fact]
