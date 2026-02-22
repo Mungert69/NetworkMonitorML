@@ -615,6 +615,7 @@ public class MonitorMLService : IMonitorMLService
                 predictStatus.SpikeDetectionResult = finalSpikeResult;
                 predictStatus.EventTime = monitorPingInfo.DateEnded;
                 predictStatus.AlertFlag = finalAlertFlag;
+                predictStatus.DownCount = finalAlertFlag ? 1 : 0;
                 if (predictStatus.AlertFlag)
                 {
                     _logger.LogInformation($"MonitorPingInfo: {monitorPingInfo.ID} - {combinedAnalysis}");
