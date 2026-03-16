@@ -12,12 +12,7 @@ namespace NetworkMonitor.ML
     {
         public static void Main(string[] args)
         {
-            string appFile = "appsettings.json";
-            IConfigurationRoot config = new ConfigurationBuilder()
-                .AddJsonFile(appFile, optional: false)
-                .Build();
-
-            IHost host = CreateHostBuilder(config).Build();
+            IHost host = CreateHostBuilder(args).Build();
 
             using (IServiceScope scope = host.Services.CreateScope())
             {
@@ -46,11 +41,12 @@ namespace NetworkMonitor.ML
             host.Run();
         }
 
-        public static IHostBuilder CreateHostBuilder(IConfigurationRoot config) =>
-            Host.CreateDefaultBuilder()
+        public static IHostBuilder CreateHostBuilder(string[] args) =>
+            Host.CreateDefaultBuilder(args)
                 .ConfigureAppConfiguration(builder =>
                 {
-                    builder.AddConfiguration(config);
+                    builder.AddJsonFile("appsettings.json", optional: false);
+                    builder.AddEnvironmentVariables();
                 })
                 .ConfigureServices((hostContext, services) =>
                 {
