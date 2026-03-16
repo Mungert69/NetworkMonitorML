@@ -112,6 +112,7 @@ public class MonitorMLService : IMonitorMLService
         _rabbitRepo = rabbitRepo;
         _systemParams = systemParamsHelper.GetSystemParams();
         _mlParams = systemParamsHelper.GetMLParams();
+        _logger.LogDebug("MonitorMLService ctor params: SystemParams={SystemParams}, MLParams={MLParams}", _systemParams, _mlParams);
         _isHybrid = !string.IsNullOrEmpty(_mlParams.SecondaryModelSelection);
         if (_isHybrid && _secondaryModelFactory == null)
         {
