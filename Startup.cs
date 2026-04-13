@@ -120,7 +120,7 @@ namespace NetworkMonitor.ML
                return systemParamsHelper.GetSystemParams();
            });
             services.AddSingleton(_cancellationTokenSource);
-            services.Configure<HostOptions>(s => s.ShutdownTimeout = TimeSpan.FromSeconds(20));
+            services.Configure<HostOptions>(s => s.ShutdownTimeout = TimeSpan.FromSeconds(30));
             services.AddAsyncServiceInitialization()
              .AddInitAction<IRabbitRepo>(async (rabbitRepo) =>
                     {
