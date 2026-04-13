@@ -8,6 +8,7 @@ using System;
 using System.Text;
 using System.Diagnostics;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using NetworkMonitor.Utils;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,7 @@ public interface IRabbitListener
     Task<ResultObj> MLCheck(MonitorMLInitObj serviceObj);
     Task Shutdown();
     Task<ResultObj> Setup();
+    Task<ResultObj> Setup(CancellationToken cancellationToken);
 
 
 }

@@ -124,7 +124,7 @@ namespace NetworkMonitor.ML
             services.AddAsyncServiceInitialization()
              .AddInitAction<IRabbitRepo>(async (rabbitRepo) =>
                     {
-                        await rabbitRepo.ConnectAndSetUp();
+                        await rabbitRepo.ConnectAndSetUp(_cancellationTokenSource.Token);
                     })
                 .AddInitAction<IMonitorMLService>(async (mlService) =>
                     {
@@ -132,7 +132,7 @@ namespace NetworkMonitor.ML
                     })
                  .AddInitAction<IRabbitListener>(async (rabbitListener) =>
                     {
-                        await rabbitListener.Setup();
+                        await rabbitListener.Setup(_cancellationTokenSource.Token);
                     });
         }
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
@@ -142,6 +142,18 @@ namespace NetworkMonitor.ML
             appLifetime.ApplicationStopping.Register(() =>
             {
                 _cancellationTokenSource.Cancel();
+
+                var rabbitRepo = app.ApplicationServices.GetService<IRabbitRepo>();
+                if (rabbitRepo != null)
+                {
+                    rabbitRepo.Shutdown().GetAwaiter().GetResult();
+                }
+
+                var rabbitListener = app.ApplicationServices.GetService<IRabbitListener>();
+                if (rabbitListener != null)
+                {
+                    rabbitListener.Shutdown().GetAwaiter().GetResult();
+                }
             });
 
         }
