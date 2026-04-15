@@ -115,109 +115,47 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                        switch (rabbitMQObj.FuncName)
                        {
                            case "mlCheck":
-                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                            {
-                   try
-                   {
-                       result = await MLCheck(ConvertToObject<MonitorMLInitObj>(model, ea));
-                       await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                   }
-                   catch (Exception ex)
-                   {
-                       _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheck " + ex.Message);
-                   }
-               };
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "mlCheck", async (model, ea) =>
+                               {
+                                   result = await MLCheck(ConvertToObject<MonitorMLInitObj>(model, ea));
+                               });
                                break;
                            case "mlCheckHost":
-                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                            {
-                   try
-                   {
-                       result = await CheckHost(ConvertToObject<MonitorMLCheckObj>(model, ea));
-                       await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                   }
-                   catch (Exception ex)
-                   {
-                       _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckHost " + ex.Message);
-                   }
-               };
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "mlCheckHost", async (model, ea) =>
+                               {
+                                   result = await CheckHost(ConvertToObject<MonitorMLCheckObj>(model, ea));
+                               });
                                break;
                            case "mlCheckLatestHosts":
-                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                            {
-                   try
-                   {
-                       result = await CheckLatestHosts();
-                       await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                   }
-                   catch (Exception ex)
-                   {
-                       _logger.LogError(" Error : RabbitListener.DeclareConsumers.mlCheckLatestHosts " + ex.Message);
-                   }
-               };
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "mlCheckLatestHosts", async (_, _) =>
+                               {
+                                   result = await CheckLatestHosts();
+                               });
                                break;
                            case "predictPingInfos":
-                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                            {
-                   try
-                   {
-                       result = UpdatePingInfos(ConvertToObject<ProcessorDataObj>(model, ea));
-                       await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                   }
-                   catch (Exception ex)
-                   {
-                       _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictPingInfos " + ex.Message);
-                   }
-               };
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictPingInfos", (model, ea) =>
+                               {
+                                   result = UpdatePingInfos(ConvertToObject<ProcessorDataObj>(model, ea));
+                                   return Task.CompletedTask;
+                               });
                                break;
                            case "predictAlertFlag":
-                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                            {
-                           try
-                           {
-                               result = await AlertFlag(ConvertToList<List<int>>(model, ea));
-                               await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                           }
-                           catch (Exception ex)
-                           {
-                               _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictAlertFlag " + ex.Message);
-                           }
-                       };
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictAlertFlag", async (model, ea) =>
+                               {
+                                   result = await AlertFlag(ConvertToList<List<int>>(model, ea));
+                               });
                                break;
                            case "predictAlertSent":
-                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                            {
-                           try
-                           {
-                               result = await AlertSent(ConvertToList<List<int>>(model, ea));
-                               await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                           }
-                           catch (Exception ex)
-                           {
-                               _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictAlertSent " + ex.Message);
-                           }
-                       };
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictAlertSent", async (model, ea) =>
+                               {
+                                   result = await AlertSent(ConvertToList<List<int>>(model, ea));
+                               });
                                break;
                            case "predictResetAlerts":
-                               await rabbitMQObj.ConnectChannel.BasicQosAsync(prefetchSize: 0, prefetchCount: 1, global: false);
-                               rabbitMQObj.Consumer.ReceivedAsync += async (model, ea) =>
-                            {
-                           try
-                           {
-                               result = await ResetAlerts(ConvertToList<List<int>>(model, ea));
-                               await rabbitMQObj.ConnectChannel.BasicAckAsync(ea.DeliveryTag, false);
-                           }
-                           catch (Exception ex)
-                           {
-                               _logger.LogError(" Error : RabbitListener.DeclareConsumers.predictResetAlerts " + ex.Message);
-                           }
-                       };
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictResetAlerts", async (model, ea) =>
+                               {
+                                   result = await ResetAlerts(ConvertToList<List<int>>(model, ea));
+                               });
                                break;
                        }
 
