@@ -54,10 +54,11 @@ namespace NetworkMonitorML.IntegrationTests
 
         public static IRabbitRepo? MakeRabbitRepo(SystemUrl sys)
         {
+            const int startupRetryLimit = 3;
             var cfg = BuildConfig();
             var netConfig = new NetConnectConfig(cfg, AppContext.BaseDirectory)
             {
-                MaxRetries = 3,
+                MaxRetries = startupRetryLimit,
                 RetryDelayMilliseconds = 500,
                 IsRestrictedPublishPerm = false
             };
@@ -66,7 +67,17 @@ namespace NetworkMonitorML.IntegrationTests
             netConfig.SetLocalSystemUrlAsync(sys).GetAwaiter().GetResult();
 
             var repo = new RabbitRepo(NullLogger<RabbitRepo>.Instance, netConfig);
-            var res  = repo.ConnectAndSetUp().GetAwaiter().GetResult();
+            using var startupCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            ResultObj res;
+            try
+            {
+                res = repo.ConnectAndSetUp(startupCts.Token, maxRetriesOverride: startupRetryLimit).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+                Console.Error.WriteLine($"[TestHelpers] RabbitMQ connection setup timed out for {sys.RabbitHostName}:{sys.RabbitPort}");
+                return null;
+            }
             if (!res.Success)
             {
                 Console.Error.WriteLine($"[TestHelpers] RabbitMQ connection failed for {sys.RabbitHostName}:{sys.RabbitPort}: {res.Message}");
