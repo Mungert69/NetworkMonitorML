@@ -104,7 +104,7 @@ namespace NetworkMonitor.ML
             services.AddSingleton<IFileRepo, FileRepo>(
                  provider =>
                  {
-                     return new FileRepo(false, "./state");
+                     return new FileRepo(false, "./state/networkmonitorml");
                  }
              );
             services.AddSingleton<ISystemParamsHelper, SystemParamsHelper>();
