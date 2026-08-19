@@ -8,6 +8,7 @@ using System;
 using System.Collections.Generic;
 
 namespace NetworkMonitor.MonitorML.Tests;
+
 public class MonitorMLTestData
 {
 

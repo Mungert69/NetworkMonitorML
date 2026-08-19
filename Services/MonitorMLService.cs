@@ -17,6 +17,7 @@ using Microsoft.EntityFrameworkCore;
 using NetworkMonitor.ML.Repository;
 using Microsoft.VisualStudio.TestPlatform.ObjectModel;
 namespace NetworkMonitor.ML.Services;
+
 public interface IMonitorMLService
 {
     Task Init();
@@ -359,7 +360,7 @@ public class MonitorMLService : IMonitorMLService
         {
             _logger.LogCritical($" Error : unable to init Service . Error was : {e.Message}");
         }
-         await PublishRepo.PredictReady(_logger, _rabbitRepo, true);
+        await PublishRepo.PredictReady(_logger, _rabbitRepo, true);
     }
     private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence, int preTrain)
     {
@@ -472,12 +473,12 @@ public class MonitorMLService : IMonitorMLService
                 Message = "Predict service busy; skipping duplicate run"
             };
         }
-         await PublishRepo.PredictReady(_logger, _rabbitRepo, false);
+        await PublishRepo.PredictReady(_logger, _rabbitRepo, false);
         TResultObj<List<TResultObj<(DetectionResult changeResult, DetectionResult SpikeResult)>>> testResult = await CheckLatestHostsTest();
         var result = new ResultObj();
         result.Success = testResult.Success;
         result.Message = testResult.Message;
-         await PublishRepo.PredictReady(_logger, _rabbitRepo, true);
+        await PublishRepo.PredictReady(_logger, _rabbitRepo, true);
         return result;
     }
     public async Task<TResultObj<List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>>> CheckLatestHostsTest()

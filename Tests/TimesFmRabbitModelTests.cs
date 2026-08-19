@@ -18,7 +18,7 @@ public sealed class TimesFmRabbitModelTests
     private static IEnumerable<LocalPingInfo> MakePings(params double[] rtts)
         => rtts.Select((v, i) => new LocalPingInfo { DateSentInt = (uint)(i + 1), RoundTripTime = (float)v, StatusID = 0 });
 
-    [Fact(DisplayName = "Happy path: forecasts and quantiles present"), Trait("Category","Integration")]
+    [Fact(DisplayName = "Happy path: forecasts and quantiles present"), Trait("Category", "Integration")]
     public async Task HappyPath_WithQuantiles()
     {
         var sys = LocalRabbitUrl();
@@ -88,7 +88,7 @@ public sealed class TimesFmRabbitModelTests
         }
     }
 
-    [Fact(DisplayName = "Quantiles absent -> neutral bands"), Trait("Category","Integration")]
+    [Fact(DisplayName = "Quantiles absent -> neutral bands"), Trait("Category", "Integration")]
     public async Task MissingQuantiles()
     {
         var sys = LocalRabbitUrl();
@@ -138,7 +138,7 @@ public sealed class TimesFmRabbitModelTests
         }
     }
 
-    [Fact(DisplayName = "Shape variants parse"), Trait("Category","Integration")]
+    [Fact(DisplayName = "Shape variants parse"), Trait("Category", "Integration")]
     public async Task WrappedVsUnwrappedShapes()
     {
         var sys = LocalRabbitUrl();
@@ -215,7 +215,7 @@ public sealed class TimesFmRabbitModelTests
         }
     }
 
-    [Fact(DisplayName = "Persistent spikes trigger change flag"), Trait("Category","Integration")]
+    [Fact(DisplayName = "Persistent spikes trigger change flag"), Trait("Category", "Integration")]
     public async Task SpikesTriggerChangeFlag()
     {
         var sys = LocalRabbitUrl();
@@ -278,7 +278,7 @@ public sealed class TimesFmRabbitModelTests
         }
     }
 
-    [Fact(DisplayName = "Multi-chunk TimesFM response is aggregated"), Trait("Category","Integration")]
+    [Fact(DisplayName = "Multi-chunk TimesFM response is aggregated"), Trait("Category", "Integration")]
     public async Task MultiChunkForecastResponse()
     {
         var sys = LocalRabbitUrl();
@@ -345,7 +345,7 @@ public sealed class TimesFmRabbitModelTests
         }
     }
 
-    [Fact(DisplayName = "Unknown forecast shape throws"), Trait("Category","Integration")]
+    [Fact(DisplayName = "Unknown forecast shape throws"), Trait("Category", "Integration")]
     public async Task UnknownForecastShapeThrows()
     {
         var sys = LocalRabbitUrl();
@@ -390,7 +390,7 @@ public sealed class TimesFmRabbitModelTests
     }
 
 
-    [Fact(DisplayName = "Cooldown decrements per sample"), Trait("Category","Integration")]
+    [Fact(DisplayName = "Cooldown decrements per sample"), Trait("Category", "Integration")]
     public async Task CooldownTicksDownPerSample()
     {
         var sys = LocalRabbitUrl();

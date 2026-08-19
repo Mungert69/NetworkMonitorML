@@ -132,7 +132,7 @@ namespace NetworkMonitor.ML.Model
                 IDataView transformedData = iidSpikeTransform.Transform(dataView);
                 var predictions = _mlContext.Data.CreateEnumerable<AnomalyPrediction>(transformedData, reuseRowObject: false).ToList();
                 _mlContext.Model.Save(iidSpikeTransform, emptyDataView.Schema, _modelPath);
-    
+
                 for (int i = 0; i < map.Length; i++)
                 {
                     int idx = map[i];

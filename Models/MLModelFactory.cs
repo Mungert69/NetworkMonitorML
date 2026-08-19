@@ -13,7 +13,7 @@ namespace NetworkMonitor.ML.Model
     }
     public class MLModelFactory : IMLModelFactory
     {
-        
+
         public IMLModel CreateModel(string modelType, int monitorPingInfoID, double confidence, int preTrain)
         {
             switch (modelType.ToLower())

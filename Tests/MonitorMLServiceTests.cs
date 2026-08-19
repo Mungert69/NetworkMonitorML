@@ -51,8 +51,8 @@ namespace NetworkMonitor.MonitorML.Tests
                 StatusID = pingInfo.StatusID
             }).ToList();
             var systemParams = MonitorMLTestData.GetSystemParams();
-               var mlParams = MonitorMLTestData.GetMLParams();
-             _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+            var mlParams = MonitorMLTestData.GetMLParams();
+            _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
             // Setup _systemParamsHelperMock to return the mocked SystemParams object from GetSystemParams()
             _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
 
@@ -61,7 +61,7 @@ namespace NetworkMonitor.MonitorML.Tests
             _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, dataSetID))
                                 .ReturnsAsync(mockMonitorPingInfo);
 
-            
+
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
                                               .ReturnsAsync(new ResultObj());
             IMLModelFactory mlModelFactory = new MLModelFactory();
@@ -98,8 +98,8 @@ namespace NetworkMonitor.MonitorML.Tests
             int dataSetID = 0;
             var mockMonitorPingInfo = MonitorMLTestData.GenerateDataWithChange(monitorIPID, dataSetID);
             var systemParams = MonitorMLTestData.GetSystemParams();
-               var mlParams = MonitorMLTestData.GetMLParams();
-             _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+            var mlParams = MonitorMLTestData.GetMLParams();
+            _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
             // Setup _systemParamsHelperMock to return the mocked SystemParams object from GetSystemParams()
             _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
 
@@ -149,8 +149,8 @@ namespace NetworkMonitor.MonitorML.Tests
             int dataSetID = 0;
             var mockMonitorPingInfo = MonitorMLTestData.GenerateDataWithSpikeAndChange(monitorIPID, dataSetID);
             var systemParams = MonitorMLTestData.GetSystemParams();
-               var mlParams = MonitorMLTestData.GetMLParams();
-             _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+            var mlParams = MonitorMLTestData.GetMLParams();
+            _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
             // Setup _systemParamsHelperMock to return the mocked SystemParams object from GetSystemParams()
             _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
 
@@ -297,11 +297,11 @@ namespace NetworkMonitor.MonitorML.Tests
 
             var systemParams = MonitorMLTestData.GetSystemParams();
             var mlParams = MonitorMLTestData.GetMLParams();
-             _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
+            _systemParamsHelperMock.Setup(p => p.GetMLParams()).Returns(mlParams);
 
             // Setup _systemParamsHelperMock to return the mocked SystemParams object from GetSystemParams()
             _systemParamsHelperMock.Setup(p => p.GetSystemParams()).Returns(systemParams);
-           
+
             // Mocking the repository to return the dataset with both spikes and changes
             _monitorMLDataRepoMock.Setup(repo => repo.GetLatestMonitorPingInfos(It.IsAny<int>()))
                                   .ReturnsAsync(mockMonitorPingInfos);
@@ -365,7 +365,7 @@ namespace NetworkMonitor.MonitorML.Tests
         }
 
 
-    
+
 
         [Fact]
         public async Task CheckHost_SkipsDetectionWhenAlertLatched()
@@ -413,55 +413,55 @@ namespace NetworkMonitor.MonitorML.Tests
             Assert.Contains("Skipped", mockMonitorPingInfo.PredictStatus.SpikeDetectionResult.Result.Message);
         }
 
-    private sealed class FakeModelFactory : IMLModelFactory, ISecondaryModelFactory
-    {
-        private readonly bool _detectChange;
-        private readonly bool _detectSpike;
-
-        public FakeModelFactory(bool changeDetect, bool spikeDetect)
+        private sealed class FakeModelFactory : IMLModelFactory, ISecondaryModelFactory
         {
-            _detectChange = changeDetect;
-            _detectSpike = spikeDetect;
-        }
+            private readonly bool _detectChange;
+            private readonly bool _detectSpike;
 
-        public IMLModel CreateModel(string modelType, int monitorPingInfoID, double confidence, int preTrain)
-        {
-            bool detect = string.Equals(modelType, "change", StringComparison.OrdinalIgnoreCase) ? _detectChange : _detectSpike;
-            return new FakeModel(detect) { Confidence = confidence, PreTrain = preTrain };
-        }
-    }
-
-    private sealed class FakeModel : IMLModel
-    {
-        private readonly bool _detect;
-
-        public FakeModel(bool detect) => _detect = detect;
-
-        public double Confidence { get; set; }
-        public int PreTrain { get; set; }
-
-        public void Train(List<LocalPingInfo> data) { }
-
-        public AnomalyPrediction Predict(LocalPingInfo input) => CreatePrediction(_detect);
-
-        public IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs)
-            => inputs.Select(_ => CreatePrediction(_detect)).ToList();
-
-        public void PrintPrediction(IEnumerable<AnomalyPrediction> predictions) { }
-
-        private static AnomalyPrediction CreatePrediction(bool detect)
-        {
-            return new AnomalyPrediction
+            public FakeModelFactory(bool changeDetect, bool spikeDetect)
             {
-                Prediction = new[]
+                _detectChange = changeDetect;
+                _detectSpike = spikeDetect;
+            }
+
+            public IMLModel CreateModel(string modelType, int monitorPingInfoID, double confidence, int preTrain)
+            {
+                bool detect = string.Equals(modelType, "change", StringComparison.OrdinalIgnoreCase) ? _detectChange : _detectSpike;
+                return new FakeModel(detect) { Confidence = confidence, PreTrain = preTrain };
+            }
+        }
+
+        private sealed class FakeModel : IMLModel
+        {
+            private readonly bool _detect;
+
+            public FakeModel(bool detect) => _detect = detect;
+
+            public double Confidence { get; set; }
+            public int PreTrain { get; set; }
+
+            public void Train(List<LocalPingInfo> data) { }
+
+            public AnomalyPrediction Predict(LocalPingInfo input) => CreatePrediction(_detect);
+
+            public IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs)
+                => inputs.Select(_ => CreatePrediction(_detect)).ToList();
+
+            public void PrintPrediction(IEnumerable<AnomalyPrediction> predictions) { }
+
+            private static AnomalyPrediction CreatePrediction(bool detect)
+            {
+                return new AnomalyPrediction
                 {
+                    Prediction = new[]
+                    {
                     detect ? 1d : 0d,
                     detect ? 100d : 10d,
                     detect ? 0.01d : 0.9d,
                     detect ? 50d : 5d
                 }
-            };
+                };
+            }
         }
     }
-}
 }

@@ -90,10 +90,10 @@ namespace NetworkMonitorML.IntegrationTests
         {
             var f = new ConnectionFactory
             {
-                HostName    = sys.RabbitHostName,
-                Port        = sys.RabbitPort,
-                UserName    = sys.RabbitUserName,
-                Password    = sys.RabbitPassword,
+                HostName = sys.RabbitHostName,
+                Port = sys.RabbitPort,
+                UserName = sys.RabbitUserName,
+                Password = sys.RabbitPassword,
                 VirtualHost = sys.RabbitVHost
             };
 
@@ -143,13 +143,13 @@ namespace NetworkMonitorML.IntegrationTests
             public FakeSpaceResponder(SystemUrl sys, Func<JsonElement, string, IEnumerable<string>> handler)
             {
                 _conn = NewConn(sys);
-                _ch   = _conn.CreateChannelAsync().GetAwaiter().GetResult();
+                _ch = _conn.CreateChannelAsync().GetAwaiter().GetResult();
 
                 _ch.ExchangeDeclareAsync("oa.chat.create", ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
-                _ch.ExchangeDeclareAsync("oa.chat.reply",  ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
+                _ch.ExchangeDeclareAsync("oa.chat.reply", ExchangeType.Direct, durable: true).GetAwaiter().GetResult();
 
                 var qok = _ch.QueueDeclareAsync(queue: "", durable: false, exclusive: true, autoDelete: true).GetAwaiter().GetResult();
-                _queue  = qok.QueueName;
+                _queue = qok.QueueName;
                 _ch.QueueBindAsync(_queue, "oa.chat.create", routingKey: "").GetAwaiter().GetResult();
                 _ch.BasicQosAsync(0, 1, global: false).GetAwaiter().GetResult();
 

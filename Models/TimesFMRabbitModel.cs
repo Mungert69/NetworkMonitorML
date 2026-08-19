@@ -50,7 +50,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
     // ---- Martingale evidence accumulator (slot [3]) ----
     // Telemetry style: nearly neutral on calm points; climbs near/over band edges.
     private double _martingale = 1.0;
-    private const double MART_EPS   = 0.997;   // gentler power-martingale (flatter in calm)
+    private const double MART_EPS = 0.997;   // gentler power-martingale (flatter in calm)
     private const double MART_CLAMP = 1e6;     // safety bound
     private double _maxMartingaleThisBatch = 1.0;
 

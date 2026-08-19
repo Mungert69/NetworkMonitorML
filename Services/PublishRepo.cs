@@ -101,7 +101,7 @@ namespace NetworkMonitor.ML.Repository
                         predictStatusAlert.IsEmailVerified = f.IsEmailVerified;
                         predictStatusAlerts.Add(predictStatusAlert);
                     }
-                    
+
                     //timerStr += " Event (Created All PingInfos as List) at " + timer.ElapsedMilliseconds + " : ";
 
 
@@ -133,8 +133,8 @@ namespace NetworkMonitor.ML.Repository
             }
             return result;
         }
-        
-        
+
+
         public static async Task PredictReady(ILogger logger, IRabbitRepo rabbitRepo, bool isReady)
         {
             try

@@ -42,9 +42,9 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
     }
 
     private static SystemUrl DeriveSystemUrl(SystemParams systemParams)
-        {
-            return systemParams.ThisSystemUrl;
-        }
+    {
+        return systemParams.ThisSystemUrl;
+    }
     protected override void InitRabbitMQObjs()
     {
 

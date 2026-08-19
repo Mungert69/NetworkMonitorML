@@ -13,7 +13,7 @@ public class SdcaModel : MLModel
     public SdcaModel(int monitorPingInfoID) : base(monitorPingInfoID)
     {
         var modelPath = $"model_{monitorPingInfoID}.zip";
-        _mlContext=new MLContext();
+        _mlContext = new MLContext();
         _trainer = new Trainer(modelPath, _mlContext);
         _predictor = new Predictor(modelPath, _mlContext);
     }
@@ -23,18 +23,18 @@ public class SdcaModel : MLModel
         _trainer.Train(data);
     }
 
-    public override  AnomalyPrediction Predict(LocalPingInfo input)
+    public override AnomalyPrediction Predict(LocalPingInfo input)
     {
         return _predictor.Predict(input);
     }
 
- public override IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs)
+    public override IEnumerable<AnomalyPrediction> PredictList(List<LocalPingInfo> inputs)
     {
         //TODO implement this
         return new List<AnomalyPrediction>();
     }
 
-     public class Trainer
+    public class Trainer
     {
         private readonly string _modelPath;
         private MLContext _mlContext;
@@ -51,9 +51,9 @@ public class SdcaModel : MLModel
             // Load data into ML.NET data view
             var data = _mlContext.Data.LoadFromEnumerable(localPingInfos);
 
-       var pipeline = _mlContext.Transforms.Concatenate("Features",nameof(LocalPingInfo.RoundTripTime))
-    .Append(_mlContext.Transforms.NormalizeMinMax("Features"))
-    .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: nameof(LocalPingInfo.RoundTripTime), maximumNumberOfIterations: 100));
+            var pipeline = _mlContext.Transforms.Concatenate("Features", nameof(LocalPingInfo.RoundTripTime))
+         .Append(_mlContext.Transforms.NormalizeMinMax("Features"))
+         .Append(_mlContext.Regression.Trainers.Sdca(labelColumnName: nameof(LocalPingInfo.RoundTripTime), maximumNumberOfIterations: 100));
 
             var model = pipeline.Fit(data);
 
@@ -62,30 +62,30 @@ public class SdcaModel : MLModel
     }
 
 
-public class Predictor
-{
-    private readonly string _modelPath;
-    private MLContext _mlContext;
-    private ITransformer _model;
+    public class Predictor
+    {
+        private readonly string _modelPath;
+        private MLContext _mlContext;
+        private ITransformer _model;
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
-    public Predictor(string modelPath, MLContext mlContext)
-    {
-        _modelPath = modelPath;
-        _mlContext = mlContext;
+        public Predictor(string modelPath, MLContext mlContext)
+        {
+            _modelPath = modelPath;
+            _mlContext = mlContext;
 
-    }
+        }
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
 
-    public AnomalyPrediction Predict(LocalPingInfo input)
-    {
-         _model = _mlContext.Model.Load(_modelPath, out var modelSchema);
-        var predictionEngine = _mlContext.Model.CreatePredictionEngine<LocalPingInfo, AnomalyPrediction>(_model);
-        var prediction = predictionEngine.Predict(input);
-        return prediction;
+        public AnomalyPrediction Predict(LocalPingInfo input)
+        {
+            _model = _mlContext.Model.Load(_modelPath, out var modelSchema);
+            var predictionEngine = _mlContext.Model.CreatePredictionEngine<LocalPingInfo, AnomalyPrediction>(_model);
+            var prediction = predictionEngine.Predict(input);
+            return prediction;
+        }
     }
-}
 
 
 }
