@@ -359,3 +359,8 @@ nohup.out
 # Local Python virtualenvs
 venv/
 .venv/
+# Local AI tool state
+/.codex/
+/.qwen/
+/.gemini/
+/.pi/
