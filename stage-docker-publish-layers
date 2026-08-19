@@ -21,6 +21,10 @@ move_root_matches() {
 for directory in runtimes openssl alpine arm64 macos ubuntu x64 x86; do
   [ ! -e "$LAYERS_DIR/dependencies/$directory" ] || mv "$LAYERS_DIR/dependencies/$directory" "$LAYERS_DIR/native/"
 done
+# ML packages such as MKL.NET ship large native Linux libraries at the publish
+# root. Keep them with the other native assets so application/dependency
+# metadata changes do not recreate the package-binary layer.
+move_root_matches "$LAYERS_DIR/dependencies" "$LAYERS_DIR/native" 'lib*.so*'
 for directory in Assets Services TestData agent-files agentfiles templates wwwroot \
   qwen3-embed-0.6-onnx stsb-bert-tiny-onnx; do
   [ ! -e "$LAYERS_DIR/dependencies/$directory" ] || mv "$LAYERS_DIR/dependencies/$directory" "$LAYERS_DIR/content/"
