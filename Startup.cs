@@ -70,7 +70,8 @@ namespace NetworkMonitor.ML
                 sp.GetRequiredService<IRabbitRepo>(),
                 sp.GetRequiredService<SystemParams>(),
                 sp.GetRequiredService<ILoggerFactory>(),
-                sp.GetRequiredService<MLParams>()));
+                sp.GetRequiredService<MLParams>(),
+                sp.GetRequiredService<GradLlmHmacProtocol>()));
 
             services.AddSingleton<IMLModelFactory>(sp =>
             {
@@ -100,7 +101,12 @@ namespace NetworkMonitor.ML
             services.AddSingleton<IMonitorMLDataRepo, MonitorMLDataRepo>();
             services.AddSingleton<IMonitorMLService, MonitorMLService>();
             services.AddSingleton<IRabbitListener, RabbitListener>();
-            services.AddSingleton<IRabbitRepo, RabbitRepo>();
+            services.AddSingleton<RabbitRepo>();
+            services.AddSingleton<IBackendMessageHmacService, BackendMessageHmacService>();
+            services.AddSingleton<GradLlmHmacProtocol>();
+            services.AddSingleton<IRabbitRepo>(sp => new BackendHmacRabbitRepo(
+                sp.GetRequiredService<RabbitRepo>(),
+                sp.GetRequiredService<IBackendMessageHmacService>()));
             services.AddSingleton<IFileRepo, FileRepo>(
                  provider =>
                  {

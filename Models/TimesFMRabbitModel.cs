@@ -63,9 +63,10 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         int preTrain,
         string modelType,
         string routingKey,
-        TimesFmResolvedSettings? settings = null)
+        TimesFmResolvedSettings? settings = null,
+        GradLlmHmacProtocol? gradLlmHmac = null)
     {
-        _tx = new RabbitTransport(rabbitRepo, sys, routingKey, log);
+        _tx = new RabbitTransport(rabbitRepo, sys, routingKey, log, gradLlmHmac);
         _log = log;
         _routingKey = routingKey;
         _monitorPingInfoID = monitorPingInfoID;

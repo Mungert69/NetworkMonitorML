@@ -34,11 +34,13 @@ public interface IRabbitListener
 public class RabbitListener : RabbitListenerBase, IRabbitListener
 {
     protected IMonitorMLService _mlService;
+    private readonly IBackendMessageHmacService _hmac;
 
-    public RabbitListener(IMonitorMLService mlService, ILogger<RabbitListenerBase> logger, SystemParams systemParams) : base(logger, DeriveSystemUrl(systemParams))
+    public RabbitListener(IMonitorMLService mlService, ILogger<RabbitListenerBase> logger, SystemParams systemParams, IBackendMessageHmacService hmac) : base(logger, DeriveSystemUrl(systemParams))
     {
 
         _mlService = mlService;
+        _hmac = hmac;
     }
 
     private static SystemUrl DeriveSystemUrl(SystemParams systemParams)
@@ -127,34 +129,37 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
                                });
                                break;
                            case "mlCheckLatestHosts":
-                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "mlCheckLatestHosts", async (_, _) =>
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "mlCheckLatestHosts", async (model, ea) =>
                                {
-                                   result = await CheckLatestHosts();
+                                   var command = ConvertToObject<BackendControlCommand>(model, ea);
+                                   result = await CheckLatestHosts(command);
                                });
                                break;
                            case "predictPingInfos":
-                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictPingInfos", (model, ea) =>
+                               await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictPingInfos", async (model, ea) =>
                                {
-                                   result = UpdatePingInfos(ConvertToObject<ProcessorDataObj>(model, ea));
-                                   return Task.CompletedTask;
+                                   result = await UpdatePingInfos(ConvertToObject<ProcessorDataObj>(model, ea));
                                });
                                break;
                            case "predictAlertFlag":
                                await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictAlertFlag", async (model, ea) =>
                                {
-                                   result = await AlertFlag(ConvertToList<List<int>>(model, ea));
+                                   var message = ConvertToObject<BackendIntListMessage>(model, ea);
+                                   result = await AlertFlag(message);
                                });
                                break;
                            case "predictAlertSent":
                                await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictAlertSent", async (model, ea) =>
                                {
-                                   result = await AlertSent(ConvertToList<List<int>>(model, ea));
+                                   var message = ConvertToObject<BackendIntListMessage>(model, ea);
+                                   result = await AlertSent(message);
                                });
                                break;
                            case "predictResetAlerts":
                                await RegisterConsumerHandlerAsync(rabbitMQObj, 1, "predictResetAlerts", async (model, ea) =>
                                {
-                                   result = await ResetAlerts(ConvertToList<List<int>>(model, ea));
+                                   var message = ConvertToObject<BackendIntListMessage>(model, ea);
+                                   result = await ResetAlerts(message);
                                });
                                break;
                        }
@@ -172,6 +177,19 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         return result;
     }
+
+    private async Task<bool> ValidateHmacAsync(string operation, IBackendSignedMessage? message)
+    {
+        var valid = message != null && await _hmac.VerifyAsync(operation, operation, message);
+        if (!valid) _logger.LogWarning("Rejected RabbitMQ operation {Operation}: invalid backend HMAC.", operation);
+        return valid;
+    }
+
+    private static ResultObj AuthenticationFailure(string operation) => new()
+    {
+        Success = false,
+        Message = $"Error : rejected {operation}: invalid backend HMAC."
+    };
     public async Task<ResultObj> MLCheck(MonitorMLInitObj? serviceObj)
     {
         ResultObj result = new ResultObj();
@@ -183,6 +201,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             _logger.LogError(result.Message);
             return result;
         }
+        if (!await ValidateHmacAsync("mlCheck", serviceObj)) return AuthenticationFailure("mlCheck");
         try
         {
             result = await _mlService.MLCheck(serviceObj);
@@ -211,6 +230,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             return result;
 
         }
+        if (!await ValidateHmacAsync("mlCheckHost", checkHostObj)) return AuthenticationFailure("mlCheckHost");
 
         try
         {
@@ -227,8 +247,9 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         return result;
     }
 
-    public async Task<ResultObj> CheckLatestHosts()
+    public async Task<ResultObj> CheckLatestHosts(BackendControlCommand? command)
     {
+        if (!await ValidateHmacAsync("mlCheckLatestHosts", command)) return AuthenticationFailure("mlCheckLatestHosts");
         var result = new ResultObj();
         result.Success = false;
         result.Message = "MessageAPI : CheckLatestHosts : ";
@@ -245,7 +266,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         return result;
     }
-    public ResultObj UpdatePingInfos(ProcessorDataObj? processorDataObj)
+    public async Task<ResultObj> UpdatePingInfos(ProcessorDataObj? processorDataObj)
     {
         ResultObj result = new ResultObj();
         result.Success = false;
@@ -256,6 +277,7 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
             _logger.LogError(result.Message);
             return result;
         }
+        if (!await ValidateHmacAsync("predictPingInfos", processorDataObj)) return AuthenticationFailure("predictPingInfos");
         try
         {
             result = _mlService.UpdatePingInfos(processorDataObj);
@@ -272,8 +294,10 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         return result;
     }
 
-    public async Task<ResultObj> AlertFlag(List<int>? monitorIPIDs)
+    public async Task<ResultObj> AlertFlag(BackendIntListMessage? message)
     {
+        if (!await ValidateHmacAsync("predictAlertFlag", message)) return AuthenticationFailure("predictAlertFlag");
+        var monitorIPIDs = message!.Values;
         ResultObj result = new ResultObj();
         result.Success = false;
         result.Message = "MessageAPI : AlertFlag : ";
@@ -307,8 +331,10 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         return result;
     }
-    public async Task<ResultObj> AlertSent(List<int>? monitorIPIDs)
+    public async Task<ResultObj> AlertSent(BackendIntListMessage? message)
     {
+        if (!await ValidateHmacAsync("predictAlertSent", message)) return AuthenticationFailure("predictAlertSent");
+        var monitorIPIDs = message!.Values;
         ResultObj result = new ResultObj();
         result.Success = false;
         result.Message = "MessageAPI : AlertSent : ";
@@ -342,8 +368,10 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
         }
         return result;
     }
-    public async Task<ResultObj> ResetAlerts(List<int>? monitorIPIDs)
+    public async Task<ResultObj> ResetAlerts(BackendIntListMessage? message)
     {
+        if (!await ValidateHmacAsync("predictResetAlerts", message)) return AuthenticationFailure("predictResetAlerts");
+        var monitorIPIDs = message!.Values;
         ResultObj result = new ResultObj();
         result.Success = false;
         result.Message = "MessageAPI : ResetAlerts : ";

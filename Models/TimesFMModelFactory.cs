@@ -14,17 +14,19 @@ public sealed class TimesFmModelFactory : ISecondaryModelFactory
     private readonly SystemUrl _sys;
     private readonly ILoggerFactory _lf;
     private readonly MLParams _mlParams;
+    private readonly GradLlmHmacProtocol _gradLlmHmac;
 
     // optional sharding key for your Rabbit topology
     private readonly string _routingKey;
 
-    public TimesFmModelFactory(IRabbitRepo rabbitRepo, SystemParams systemParams, ILoggerFactory lf, MLParams mlParams)
+    public TimesFmModelFactory(IRabbitRepo rabbitRepo, SystemParams systemParams, ILoggerFactory lf, MLParams mlParams, GradLlmHmacProtocol gradLlmHmac)
     {
         _rabbitRepo = rabbitRepo;
         _sys = systemParams.ThisSystemUrl;
         _lf = lf;
         _routingKey = systemParams.RabbitRoutingKey; // set from config if you use shards
         _mlParams = mlParams;
+        _gradLlmHmac = gradLlmHmac;
     }
 
     public IMLModel CreateModel(string modelType, int monitorPingInfoID, double confidence, int preTrain)
@@ -44,6 +46,7 @@ public sealed class TimesFmModelFactory : ISecondaryModelFactory
             preTrain,
             modelType,
             _routingKey,
-            baseSettings);
+            baseSettings,
+            _gradLlmHmac);
     }
 }

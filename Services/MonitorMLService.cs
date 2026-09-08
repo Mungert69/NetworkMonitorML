@@ -518,14 +518,14 @@ public class MonitorMLService : IMonitorMLService
                 else results.Add(await CheckHost(monitorPingInfo));
             }
             ResultObj resultPublish = new ResultObj();
-            if (_systemParams.ServiceID != null && _systemParams.ServiceAuthKey != null)
+            if (_systemParams.ServiceID != null)
             {
-                resultPublish = await PublishRepo.MonitorPingInfos(_logger, _rabbitRepo, latestMonitorPingInfos, _systemParams.ServiceID, _systemParams.ServiceAuthKey);
+                resultPublish = await PublishRepo.MonitorPingInfos(_logger, _rabbitRepo, latestMonitorPingInfos, _systemParams.ServiceID);
             }
             else
             {
                 resultPublish.Success = false;
-                resultPublish.Message = " Error : missing system paramters SerivceID and or ServiceAuthKey.";
+                resultPublish.Message = " Error : missing system parameter ServiceID.";
             }
             result.Success = resultPublish.Success && results.Any(r => r.Success);
             result.Message += resultPublish.Message;
@@ -1255,7 +1255,7 @@ public class MonitorMLService : IMonitorMLService
             alertFlagObjs.Add(new AlertFlagObj() { ID = id });
             results.Add(result);
         }
-        results.Add(await PublishRepo.AlertMessgeResetPredictAlerts(_rabbitRepo, alertFlagObjs, _systemParams.ServiceID, _systemParams.ServiceAuthKey));
+        results.Add(await PublishRepo.AlertMessgeResetPredictAlerts(_rabbitRepo, alertFlagObjs, _systemParams.ServiceID ?? ""));
         return results;
     }
 }

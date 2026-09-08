@@ -14,7 +14,7 @@ namespace NetworkMonitor.ML.Repository
     public class PublishRepo
     {
 
-        public static async Task<ResultObj> AlertMessgeResetPredictAlerts(IRabbitRepo rabbitRepo, List<AlertFlagObj> alertFlagObjs, string appID, string authKey)
+        public static async Task<ResultObj> AlertMessgeResetPredictAlerts(IRabbitRepo rabbitRepo, List<AlertFlagObj> alertFlagObjs, string appID)
         {
             var result = new ResultObj();
             try
@@ -22,7 +22,6 @@ namespace NetworkMonitor.ML.Repository
                 var alertServiceAlertObj = new AlertServiceAlertObj()
                 {
                     AppID = appID,
-                    AuthKey = authKey,
                     AlertFlagObjs = alertFlagObjs
                 };
 
@@ -57,7 +56,7 @@ namespace NetworkMonitor.ML.Repository
          }*/
 
 
-        public static async Task<ResultObj> MonitorPingInfos(ILogger logger, IRabbitRepo rabbitRepo, List<MonitorPingInfo> monitorPingInfos, string appID, string authKey)
+        public static async Task<ResultObj> MonitorPingInfos(ILogger logger, IRabbitRepo rabbitRepo, List<MonitorPingInfo> monitorPingInfos, string appID)
         {
             // var _daprMetadata = new Dictionary<string, string>();
             //_daprMetadata.Add("ttlInSeconds", "120");
@@ -111,7 +110,6 @@ namespace NetworkMonitor.ML.Repository
                     processorDataObjAlert.PredictStatusAlerts = predictStatusAlerts;
                     //processorDataObjAlert.PingInfos = new List<PingInfo>();
                     processorDataObjAlert.AppID = appID;
-                    processorDataObjAlert.AuthKey = authKey;
                     int countMonStatusAlerts = predictStatusAlerts.Count();
                     timerStr += " Event (Finished ProcessorDataObj Setup) at " + timer.ElapsedMilliseconds + " : ";
                     await rabbitRepo.PublishJsonZAsync<ProcessorDataObj>("alertUpdatePredictStatusAlerts", processorDataObjAlert);
