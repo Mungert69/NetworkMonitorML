@@ -38,6 +38,13 @@
     <ContainerRepository>mungert/networkmonitorpredict</ContainerRepository>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)'=='Release' AND '$(_IsPublishing)'=='true'">
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release-Dev' AND '$(_IsPublishing)'=='true'">
+    <PublishReadyToRun>true</PublishReadyToRun>
+  </PropertyGroup>
+
 
   <ItemGroup>
     <PackageReference Include="Microsoft.ML" Version="5.0.0" />
