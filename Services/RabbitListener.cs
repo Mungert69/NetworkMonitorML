@@ -180,7 +180,8 @@ public class RabbitListener : RabbitListenerBase, IRabbitListener
 
     private async Task<bool> ValidateHmacAsync(string operation, IBackendSignedMessage? message)
     {
-        var valid = message != null && await _hmac.VerifyAsync(operation, operation, message);
+        var valid = MessageSecurityPolicyRegistry.Requires(operation, operation, MessageProtection.BackendHmac) &&
+            message != null && await _hmac.VerifyAsync(operation, operation, message);
         if (!valid) _logger.LogWarning("Rejected RabbitMQ operation {Operation}: invalid backend HMAC.", operation);
         return valid;
     }
