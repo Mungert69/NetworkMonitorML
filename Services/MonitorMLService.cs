@@ -365,6 +365,13 @@ public class MonitorMLService : IMonitorMLService
     private async Task EnsureModelInitialized(int monitorIPID, string modelType, double confidence, int preTrain)
     {
         var key = (monitorIPID, modelType);
+        if (_models.TryGetValue(key, out var existing) && existing is not TimesFmRabbitModel &&
+            (existing.Confidence != confidence || existing.PreTrain != preTrain))
+        {
+            if (existing is IDisposable disposable)
+                disposable.Dispose();
+            _models.Remove(key);
+        }
         if (!_models.ContainsKey(key))
         {
             await GetOrCreateModel(monitorIPID, modelType, confidence, preTrain);
@@ -509,26 +516,34 @@ public class MonitorMLService : IMonitorMLService
                 return result;
             }
             var results = new List<TResultObj<(DetectionResult ChangeResult, DetectionResult SpikeResult)>>();
+            var successfulHosts = new List<MonitorPingInfo>();
             foreach (var monitorPingInfo in latestMonitorPingInfos.Where(w => w.Enabled))
             {
                 if (monitorPingInfo.PingInfos.Count < _mlParams.PredictWindow)
                 {
                     _logger.LogError($" Error : not enough PingInfos in last two data sets for MonitorPingInfo with ID {monitorPingInfo.ID} EndPointType {monitorPingInfo.EndPointType}");
                 }
-                else results.Add(await CheckHost(monitorPingInfo));
+                else
+                {
+                    var hostResult = await CheckHost(monitorPingInfo);
+                    results.Add(hostResult);
+                    if (hostResult.Success) successfulHosts.Add(monitorPingInfo);
+                }
             }
             ResultObj resultPublish = new ResultObj();
             if (_systemParams.ServiceID != null)
             {
-                resultPublish = await PublishRepo.MonitorPingInfos(_logger, _rabbitRepo, latestMonitorPingInfos, _systemParams.ServiceID);
+                resultPublish = await PublishRepo.MonitorPingInfos(_logger, _rabbitRepo, successfulHosts, _systemParams.ServiceID);
             }
             else
             {
                 resultPublish.Success = false;
                 resultPublish.Message = " Error : missing system parameter ServiceID.";
             }
-            result.Success = resultPublish.Success && results.Any(r => r.Success);
+            result.Success = resultPublish.Success && results.Count > 0 && results.All(r => r.Success);
             result.Message += resultPublish.Message;
+            foreach (var failed in results.Where(r => !r.Success))
+                result.Message += " " + failed.Message;
             result.Data = results;
         }
         catch (Exception ex)
@@ -630,12 +645,19 @@ public class MonitorMLService : IMonitorMLService
                 monitorPingInfo.PredictStatus = predictStatus;
                 try
                 {
-                    await _monitorMLDataRepo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, predictStatus);
+                    var saveResult = await _monitorMLDataRepo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, predictStatus);
+                    if (!saveResult.Success)
+                    {
+                        result.Success = false;
+                        result.Message += $" Error saving predictions for monitor {monitorIPID}, dataset {dataSetID}: {saveResult.Message}";
+                        _logger.LogError("{Message}", result.Message);
+                    }
                 }
                 catch (Exception e)
                 {
                     result.Success = false;
                     result.Message += $" Error : could not update Prediction results in database for MonitorPingInfo.MonitorIPID {monitorPingInfo.MonitorIPID} DataSetID {monitorPingInfo.DataSetID} . Error was : {e.Message}";
+                    _logger.LogError(e, "Failed to save predictions for monitor {MonitorId}", monitorIPID);
                 }
 
             }
@@ -943,10 +965,8 @@ public class MonitorMLService : IMonitorMLService
     {
         if (windowSize >= maxWindow || source.Count <= windowSize)
             return source;
-        int desired = Math.Max(windowSize, Math.Min(source.Count, windowSize + Math.Max(preTrain, windowSize / 2)));
-        desired = Math.Min(source.Count, desired);
-        int start = source.Count - desired;
-        return source.GetRange(start, desired);
+        int desired = (int)Math.Min(int.MaxValue, (long)windowSize + Math.Max(preTrain, windowSize / 2));
+        return PredictionWindow.Trim(source, desired, sample => !sample.IsTimeout());
     }
 
     private bool HasSufficientUsableData(string mode, int monitorIPID, List<LocalPingInfo> data, int targetWindow, int preTrain, DetectionResult detectionResult)

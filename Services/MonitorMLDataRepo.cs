@@ -9,6 +9,7 @@ using NetworkMonitor.Data;
 using NetworkMonitor.ML.Model;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using NetworkMonitor.ML.Services;
 
 namespace NetworkMonitor.ML.Data;
 
@@ -84,10 +85,10 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
     public async Task<MonitorPingInfo?> GetMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
     {
-        _windowSize = windowSize;
         var cachedResult = _cachedMonitorPingInfos.FirstOrDefault(mpi =>
                             mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
-        if (cachedResult != null && windowSize > 0 && cachedResult.PingInfos.Count >= windowSize)
+        int required = Math.Max(windowSize, cachedResult?.ModelConfig?.PredictWindow ?? 0);
+        if (cachedResult != null && required > 0 && cachedResult.PingInfos.Count(IsUsable) >= required)
         {
             return cachedResult;
         }
@@ -131,21 +132,15 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
         if (latestMonitorPingInfo == null)
             return null;
 
-        // Calculate if additional PingInfos are needed to reach the windowSize
-        int additionalPingInfosNeeded = resolvedWindowSize - latestMonitorPingInfo.PingInfos.Count;
-        if (additionalPingInfosNeeded > 0)
+        // Include timeout headroom when loading history, just as when updating
+        // the cache. Query only older datasets, never the live dataset twice.
+        int additionalPingInfosNeeded = Math.Max(0, PredictionWindow.Capacity(resolvedWindowSize) - latestMonitorPingInfo.PingInfos.Count);
+        if (latestMonitorPingInfo.PingInfos.Count(IsUsable) < resolvedWindowSize && additionalPingInfosNeeded > 0)
         {
-            int previousDataSetID = dataSetID == 0
-                ? await monitorContext.MonitorPingInfos.AsNoTracking()
-                .Where(mpi => mpi.MonitorIPID == monitorIPID)
-                .MaxAsync(mpi => mpi.DataSetID)
-                : dataSetID - 1;
-
-
-            // Retrieve additional PingInfos from the previous dataset if available
             var additionalPingInfos = await monitorContext.MonitorPingInfos
                 .AsNoTracking()
-                .Where(mpi => mpi.Enabled && mpi.MonitorIPID == monitorIPID && mpi.DataSetID == previousDataSetID)
+                .Where(mpi => mpi.Enabled && mpi.MonitorIPID == monitorIPID && mpi.DataSetID > 0 &&
+                    (dataSetID == 0 || mpi.DataSetID < dataSetID))
                 .SelectMany(mpi => mpi.PingInfos)
                 .OrderByDescending(pi => pi.DateSentInt)
                 .Take(additionalPingInfosNeeded)
@@ -162,12 +157,13 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             latestMonitorPingInfo.ModelConfig = monitorIP.ModelConfig;
         }
 
+        latestMonitorPingInfo.PingInfos = PredictionWindow.Trim(latestMonitorPingInfo.PingInfos, resolvedWindowSize, IsUsable);
+
         return latestMonitorPingInfo;
     }
 
     public async Task<MonitorPingInfo?> GetDBMonitorPingInfo(int monitorIPID, int windowSize, int dataSetID)
     {
-        _windowSize = windowSize;
         using (var scope = _scopeFactory.CreateScope())
         {
             var monitorContext = scope.ServiceProvider.GetRequiredService<MonitorContext>();
@@ -293,6 +289,9 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
 
         if (cachedMonitorPingInfo == null)
         {
+            updatedMonitorPingInfo.PingInfos.Sort((x, y) => x.DateSentInt.CompareTo(y.DateSentInt));
+            updatedMonitorPingInfo.PingInfos = PredictionWindow.Trim(updatedMonitorPingInfo.PingInfos,
+                Math.Max(_windowSize, updatedMonitorPingInfo.ModelConfig?.PredictWindow ?? 0), IsUsable);
             _cachedMonitorPingInfos!.Add(updatedMonitorPingInfo);
             result.Success = true;
             result.Message = " Success : Added new MonitorPingInfo ";
@@ -329,20 +328,18 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             if (!existingDateSents.ContainsKey(newPi.DateSentInt))
             {
                 cachedMonitorPingInfo.PingInfos.Add(newPi);
+                existingDateSents.Add(newPi.DateSentInt, newPi);
             }
         }
 
         // Sort once after all new elements are added.
         cachedMonitorPingInfo.PingInfos.Sort((x, y) => x.DateSentInt.CompareTo(y.DateSentInt));
 
-        // Ensure the collection does not exceed the window size by removing the oldest entries first.
-        int limit = _windowSize > 0 ? _windowSize : cachedMonitorPingInfo.PingInfos.Count;
-        int excess = cachedMonitorPingInfo.PingInfos.Count - limit;
-        if (excess > 0)
-        {
-            cachedMonitorPingInfo.PingInfos.RemoveRange(0, excess);
-        }
+        int limit = Math.Max(_windowSize, cachedMonitorPingInfo.ModelConfig?.PredictWindow ?? 0);
+        cachedMonitorPingInfo.PingInfos = PredictionWindow.Trim(cachedMonitorPingInfo.PingInfos, limit, IsUsable);
     }
+
+    private static bool IsUsable(PingInfo sample) => (sample.RoundTripTime ?? 0) < ushort.MaxValue;
 
     public async Task<ResultObj> UpdateMonitorPingInfoWithPredictionResultsById(int monitorIPID, int dataSetID, PredictStatus predictStatus)
     {
@@ -486,6 +483,4 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     }
 
 }
-
-
 

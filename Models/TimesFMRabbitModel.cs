@@ -16,7 +16,8 @@ namespace NetworkMonitor.ML.Model;
 
 public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 {
-    private readonly RabbitTransport _tx;
+    private readonly RabbitTransport? _tx;
+    private readonly Func<string, CancellationToken, Task<string>> _readResponseAsync;
     private readonly ILogger<TimesFmRabbitModel> _log;
     private readonly string _routingKey;
     private readonly int _monitorPingInfoID;
@@ -24,6 +25,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
     public double Confidence { get; set; }
     public int PreTrain { get; set; }
+    internal int CooldownRemaining => _cooldown;
 
     // ---- Sensitivity + Adaptation knobs (configurable) ----
     private TimesFmResolvedSettings _settings = new();
@@ -64,9 +66,11 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         string modelType,
         string routingKey,
         TimesFmResolvedSettings? settings = null,
-        GradLlmHmacProtocol? gradLlmHmac = null)
+        GradLlmHmacProtocol? gradLlmHmac = null,
+        Func<string, CancellationToken, Task<string>>? responseReader = null)
     {
-        _tx = new RabbitTransport(rabbitRepo, sys, routingKey, log, gradLlmHmac);
+        _tx = responseReader == null ? new RabbitTransport(rabbitRepo, sys, routingKey, log, gradLlmHmac) : null;
+        _readResponseAsync = responseReader ?? ReadSingleAssistantContentAsync;
         _log = log;
         _routingKey = routingKey;
         _monitorPingInfoID = monitorPingInfoID;
@@ -216,7 +220,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         try
         {
             using var cts = new CancellationTokenSource(LlmStreamTimeout);
-            content = ReadSingleAssistantContentAsync(payloadJson, cts.Token).GetAwaiter().GetResult();
+            content = _readResponseAsync(payloadJson, cts.Token).GetAwaiter().GetResult();
         }
         catch (OperationCanceledException ex)
         {
@@ -246,7 +250,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         var (loIdx, hiIdx) = PickQuantileIndices(Confidence);
 
         // Seed sigma from pretrain
-        _lastSigma = RobustSigma(rtts.Take(PreTrain));
+        _lastSigma = RobustSigma(rtts.Take(effectivePreTrain));
 
         int near = 0, outsideCnt = 0, flaggedCnt = 0;
         double maxResid = 0, minMargin = double.PositiveInfinity;
@@ -258,7 +262,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
         for (int i = effectivePreTrain; i < n; i++)
         {
-            var j = i - PreTrain;
+            var j = ForecastIndex(i, effectivePreTrain);
             var y = rtts[i];
             var yhat = ForecastAt(j);
 
@@ -333,7 +337,10 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             bool persistenceHit = (runLen >= _runLen) || (kOfNCount >= _kOfNK);
 
             // --- Relative magnitude gate (vs baseline) ---
-            double relShift = Math.Abs(yhat - baselineMed) / Math.Max(1.0, Math.Abs(baselineMed));
+            // Assess whether the observed response time itself has moved away
+            // from the baseline. The forecast describes expected latency and
+            // can remain normal during an unexpected service degradation.
+            double relShift = RelativeShift(y, baselineMed);
             bool bigShift = relShift >= _minRelShift;
 
             bool changeFlag = persistenceHit && bigShift;
@@ -385,7 +392,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             if (changeFlag) flaggedCnt++;
 
             // sample: first 4 and last 2 rows
-            if (samples.Count < 4 || j >= (n - PreTrain) - 2)
+            if (samples.Count < 4 || j >= (n - effectivePreTrain) - 2)
             {
                 if (_logJson)
                 {
@@ -444,7 +451,7 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
         if (_log.IsEnabled(LogLevel.Information))
         {
-            int B = n - PreTrain;
+            int B = n - effectivePreTrain;
             var qpair = PickQuantileIndices(Confidence);
             _log.LogInformation(
                 "timesfm summary type={Type} monitor={Monitor} B={B} conf={Conf:0.##} band={Lo}%..{Hi}% outside={Outside} flagged={Flagged} near={Near} maxResid={Max:0.###} minMargin={Min:0.###} coolDown={Cooldown} maxM={MaxM:0.###}",
@@ -484,6 +491,9 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
         var sb = new StringBuilder();
         _log.LogDebug("[TimesFM] {ModelType} monitor {MonitorId} streaming request...", _modelType, _monitorPingInfoID);
+
+        if (_tx == null)
+            throw new InvalidOperationException("No TimesFM response transport is configured.");
 
         await foreach (var chunkJson in _tx.CreateChatCompletionStreamAsync(requestObj, ct))
         {
@@ -671,6 +681,12 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         double v = a.Select(x => (x - mean) * (x - mean)).Average();
         return Math.Sqrt(Math.Max(v, 0));
     }
+
+    internal static double RelativeShift(double observed, double baseline)
+        => Math.Abs(observed - baseline) / Math.Max(1.0, Math.Abs(baseline));
+
+    internal static int ForecastIndex(int observationIndex, int effectivePreTrain)
+        => observationIndex - effectivePreTrain;
 
     // ---------- DTO ----------
     private sealed class TimesFmResponse

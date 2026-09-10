@@ -27,6 +27,9 @@ namespace NetworkMonitor.MonitorML.Tests
             _loggerMock = new Mock<ILogger<MonitorMLService>>();
             _mlModelFactoryMock = new Mock<IMLModelFactory>();
             _monitorMLDataRepoMock = new Mock<IMonitorMLDataRepo>();
+            _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(
+                It.IsAny<int>(), It.IsAny<int>(), It.IsAny<PredictStatus>()))
+                .ReturnsAsync(new ResultObj { Success = true });
             _rabbitRepoMock = new Mock<IRabbitRepo>();
             _systemParamsHelperMock = new Mock<ISystemParamsHelper>();
 
@@ -63,7 +66,7 @@ namespace NetworkMonitor.MonitorML.Tests
 
 
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
-                                              .ReturnsAsync(new ResultObj());
+                                              .ReturnsAsync(new ResultObj { Success = true });
             IMLModelFactory mlModelFactory = new MLModelFactory();
             var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object);
             service.PredictWindow = predictWindow;
@@ -110,7 +113,7 @@ namespace NetworkMonitor.MonitorML.Tests
                                .ReturnsAsync(mockMonitorPingInfo);
 
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
-                                              .ReturnsAsync(new ResultObj());
+                                              .ReturnsAsync(new ResultObj { Success = true });
             // Assume the model can handle pattern changes effectively
             // Further setup for ML model to predict based on changed data could be here
 
@@ -161,7 +164,7 @@ namespace NetworkMonitor.MonitorML.Tests
          .ReturnsAsync(mockMonitorPingInfo);
 
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
-                                  .ReturnsAsync(new ResultObj());
+                                              .ReturnsAsync(new ResultObj { Success = true });
 
             // Further setup for ML model to predict based on data with spikes and changes could be here
             // This may involve mocking the model's response to such data or ensuring the model factory produces a model capable of handling this complexity
@@ -210,7 +213,7 @@ namespace NetworkMonitor.MonitorML.Tests
             _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, dataSetID))
                                   .ReturnsAsync(mockMonitorPingInfo);
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
-                                  .ReturnsAsync(new ResultObj());
+                                              .ReturnsAsync(new ResultObj { Success = true });
             _monitorMLDataRepoMock.Setup(repo => repo.GetLatestMonitorPingInfos(It.IsAny<int>()))
                                   .ReturnsAsync(new List<MonitorPingInfo> { mockMonitorPingInfo });
 
@@ -248,7 +251,7 @@ namespace NetworkMonitor.MonitorML.Tests
             _monitorMLDataRepoMock.Setup(repo => repo.GetMonitorPingInfo(monitorIPID, dataSetID))
                                   .ReturnsAsync(mockMonitorPingInfo);
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
-                                  .ReturnsAsync(new ResultObj());
+                                              .ReturnsAsync(new ResultObj { Success = true });
             _monitorMLDataRepoMock.Setup(repo => repo.GetLatestMonitorPingInfos(It.IsAny<int>()))
                                   .ReturnsAsync(new List<MonitorPingInfo> { mockMonitorPingInfo });
 
@@ -308,7 +311,7 @@ namespace NetworkMonitor.MonitorML.Tests
 
 
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
-                .ReturnsAsync(new ResultObj());
+                                              .ReturnsAsync(new ResultObj { Success = true });
 
             // Further setup for ML model to predict based on data with spikes and changes could be here
             // This may involve mocking the model's response to such data or ensuring the model factory produces a model capable of handling this complexity
@@ -399,7 +402,7 @@ namespace NetworkMonitor.MonitorML.Tests
                                   .ReturnsAsync(mockMonitorPingInfo);
 
             _monitorMLDataRepoMock.Setup(repo => repo.UpdateMonitorPingInfoWithPredictionResultsById(monitorIPID, dataSetID, It.IsAny<PredictStatus>()))
-                                  .ReturnsAsync(new ResultObj());
+                                              .ReturnsAsync(new ResultObj { Success = true });
 
             IMLModelFactory mlModelFactory = new MLModelFactory();
             var service = new MonitorMLService(_loggerMock.Object, _monitorMLDataRepoMock.Object, mlModelFactory, _rabbitRepoMock.Object, _systemParamsHelperMock.Object);

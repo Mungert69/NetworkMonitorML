@@ -1,461 +1,176 @@
-// tests/TimesFmRabbitModelTests.cs
-using System.Text.Json;
-using Microsoft.Extensions.Logging.Abstractions;
-using Xunit;
-using NetworkMonitor.ML.Model;
-using NetworkMonitor.Objects;
 using System;
-using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
-
-using static NetworkMonitorML.IntegrationTests.TestHelpers;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using NetworkMonitor.ML.Model;
+using NetworkMonitor.Objects;
+using NetworkMonitor.Objects.Repository;
+using Xunit;
 
 namespace NetworkMonitorML.IntegrationTests;
 
 public sealed class TimesFmRabbitModelTests
 {
-    private static IEnumerable<LocalPingInfo> MakePings(params double[] rtts)
-        => rtts.Select((v, i) => new LocalPingInfo { DateSentInt = (uint)(i + 1), RoundTripTime = (float)v, StatusID = 0 });
+    private static List<LocalPingInfo> Pings(params double[] values) =>
+        values.Select((value, index) => new LocalPingInfo
+        {
+            DateSentInt = (uint)(index + 1),
+            RoundTripTime = (float)value,
+            StatusID = 0
+        }).ToList();
 
-    [Fact(DisplayName = "Happy path: forecasts and quantiles present"), Trait("Category", "Integration")]
-    public async Task HappyPath_WithQuantiles()
+    private static TimesFmRabbitModel Model(
+        Func<int, string> reply,
+        int preTrain = 2,
+        TimesFmResolvedSettings? settings = null)
     {
-        var sys = LocalRabbitUrl();
-
-        var responder = TryCreateResponder(sys, (payload, replyKey) =>
+        Task<string> Respond(string request, CancellationToken _)
         {
-            int k = 1;
-            try
-            {
-                if (payload.TryGetProperty("messages", out var msgs) && msgs.ValueKind == JsonValueKind.Array)
-                {
-                    var user = msgs[1].GetProperty("content").GetString() ?? "{}";
-                    using var inner = JsonDocument.Parse(user);
-                    var series = inner.RootElement.GetProperty("series");
-                    if (series.ValueKind == JsonValueKind.Array) k = series.GetArrayLength();
-                }
-            }
-            catch { k = 1; }
-
-            var forecasts = Enumerable.Repeat(new[] { 101.0 }, k).ToArray(); // [[101],[101],...]
-            var qrow = new[] { 100.0, 95.0, 96.0, 97.0, 98.0, 101.0, 102.0, 103.0, 104.0, 105.0 }; // mean,q10..q90
-            var quantiles = new[] { qrow };
-
-            var content = JsonSerializer.Serialize(new
-            {
-                model = "google/timesfm-2.5-200m-pytorch",
-                horizon = 1,
-                forecast = forecasts,
-                quantiles,
-                backend = "timesfm-2.5"
-            });
-            return new[] { content };
-        });
-
-        if (responder is null)
-        {
-            return;
+            using var envelope = JsonDocument.Parse(request);
+            var content = envelope.RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!;
+            using var payload = JsonDocument.Parse(content);
+            return Task.FromResult(reply(payload.RootElement.GetProperty("series").GetArrayLength()));
         }
 
-        await using var fakeResponder = responder;
-
-        var repo = MakeRabbitRepo(sys);
-        if (repo is null)
-        {
-            return;
-        }
-        try
-        {
-            var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 42, confidence: 0.8, preTrain: 2, modelType: "Change", routingKey: "");
-
-            var window = MakePings(90, 95, 100, 101, 102).ToList();
-            var preds = model.PredictList(window).ToList();
-
-            Assert.Equal(window.Count, preds.Count);
-            Assert.Equal(0, preds[0].Prediction[0]);
-            Assert.Equal(0.5, preds[1].Prediction[2], 3);
-
-            Assert.Equal(0, preds[2].Prediction[0]);
-            Assert.True(preds[2].Prediction[1] > 0);
-            Assert.Equal(0, preds[3].Prediction[0]);
-            Assert.Equal(0, preds[4].Prediction[0]);
-        }
-        finally
-        {
-            await repo.ShutdownRepo();
-        }
+        return new TimesFmRabbitModel(
+            new Mock<IRabbitRepo>().Object,
+            new SystemUrl(),
+            NullLogger<TimesFmRabbitModel>.Instance,
+            monitorPingInfoID: 1,
+            confidence: 0.8,
+            preTrain: preTrain,
+            modelType: "Change",
+            routingKey: "",
+            settings: settings,
+            responseReader: Respond);
     }
 
-    [Fact(DisplayName = "Quantiles absent -> neutral bands"), Trait("Category", "Integration")]
-    public async Task MissingQuantiles()
+    private static string Reply(int count, double forecast = 100, double[]? quantiles = null)
     {
-        var sys = LocalRabbitUrl();
-
-        var responder = TryCreateResponder(sys, (payload, replyKey) =>
+        quantiles ??= new[] { 100d, 90, 92, 94, 96, 104, 106, 108, 110, 112 };
+        return JsonSerializer.Serialize(new
         {
-            var content = JsonSerializer.Serialize(new
-            {
-                model = "google/timesfm-2.5-200m-pytorch",
-                horizon = 1,
-                forecast = new[] { 50.0 },
-                quantiles = (object?)null,
-                backend = "timesfm-2.5"
-            });
-            return new[] { content };
+            horizon = 1,
+            forecast = Enumerable.Range(0, count).Select(_ => new[] { forecast }).ToArray(),
+            quantiles = Enumerable.Range(0, count).Select(_ => quantiles).ToArray()
         });
-
-        if (responder is null)
-        {
-            return;
-        }
-
-        await using var fakeResponder = responder;
-
-        var repo = MakeRabbitRepo(sys);
-        if (repo is null)
-        {
-            return;
-        }
-        try
-        {
-            var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 7, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
-
-            var window = MakePings(49, 50, 51).ToList();
-            var preds = model.PredictList(window).ToList();
-
-            Assert.Equal(window.Count, preds.Count);
-            Assert.Equal(0, preds[0].Prediction[0]);
-            Assert.Equal(0, preds[1].Prediction[0]);
-            Assert.Equal(0, preds[2].Prediction[0]);
-            Assert.Equal(0.5, preds[1].Prediction[2], 3);
-        }
-        finally
-        {
-            await repo.ShutdownRepo();
-        }
     }
 
-    [Fact(DisplayName = "Shape variants parse"), Trait("Category", "Integration")]
-    public async Task WrappedVsUnwrappedShapes()
+    [Fact]
+    public void ForecastsAndQuantiles_ProduceAnAlignedPredictionForEveryReading()
     {
-        var sys = LocalRabbitUrl();
+        using var model = Model(count => Reply(count));
+        var inputs = Pings(90, 95, 100, 101, 102);
 
-        int call = 0;
-        var responder = TryCreateResponder(sys, (payload, replyKey) =>
-        {
-            call++;
-            if (call == 1)
-            {
-                var content = JsonSerializer.Serialize(new
-                {
-                    model = "google/timesfm-2.5-200m-pytorch",
-                    horizon = 1,
-                    forecast = new[] { new[] { 10.0 } }, // [[v]]
-                    quantiles = new[] { new[] { 9.0, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0 } },
-                    backend = "timesfm-2.5"
-                });
-                return new[] { content };
-            }
-            else
-            {
-                var content = JsonSerializer.Serialize(new
-                {
-                    model = "google/timesfm-2.5-200m-pytorch",
-                    horizon = 1,
-                    forecast = new[] { 10.0 },          // [v]
-                    quantiles = new[] { 9.0, 8.0, 8.5, 9.0, 9.5, 10.0, 10.5, 11.0, 11.5, 12.0 },
-                    backend = "timesfm-2.5"
-                });
-                return new[] { content };
-            }
-        });
+        var predictions = model.PredictList(inputs).ToList();
 
-        if (responder is null)
-        {
-            return;
-        }
-
-        await using var fakeResponder = responder;
-
-        var repo1 = MakeRabbitRepo(sys);
-        if (repo1 is null)
-        {
-            return;
-        }
-        try
-        {
-            var log = NullLogger<TimesFmRabbitModel>.Instance;
-
-            var model1 = new TimesFmRabbitModel(repo1, sys, log, monitorPingInfoID: 1, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
-            var preds1 = model1.PredictList(MakePings(9.7, 10.2).ToList()).ToList();
-
-            var repo2 = MakeRabbitRepo(sys);
-            if (repo2 is null)
-            {
-                return;
-            }
-            try
-            {
-                var model2 = new TimesFmRabbitModel(repo2, sys, log, monitorPingInfoID: 2, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
-                var preds2 = model2.PredictList(MakePings(9.7, 10.2).ToList()).ToList();
-
-                Assert.Equal(preds1.Select(p => p.Prediction[0]), preds2.Select(p => p.Prediction[0]));
-            }
-            finally
-            {
-                await repo2.ShutdownRepo();
-            }
-        }
-        finally
-        {
-            await repo1.ShutdownRepo();
-        }
+        Assert.Equal(inputs.Count, predictions.Count);
+        Assert.All(predictions, prediction => Assert.Equal(4, prediction.Prediction.Length));
+        Assert.All(predictions.Take(2), prediction => Assert.Equal(0, prediction.Prediction[0]));
+        Assert.True(predictions[3].Prediction[1] > 0);
     }
 
-    [Fact(DisplayName = "Persistent spikes trigger change flag"), Trait("Category", "Integration")]
-    public async Task SpikesTriggerChangeFlag()
+    [Fact]
+    public void MissingQuantiles_UsesRobustFallbackBands()
     {
-        var sys = LocalRabbitUrl();
-
-        var responder = TryCreateResponder(sys, (payload, replyKey) =>
+        using var model = Model(count => JsonSerializer.Serialize(new
         {
-            int k = 1;
-            if (payload.TryGetProperty("messages", out var msgs) && msgs.ValueKind == JsonValueKind.Array)
-            {
-                var user = msgs[1].GetProperty("content").GetString() ?? "{}";
-                using var inner = JsonDocument.Parse(user);
-                var series = inner.RootElement.GetProperty("series");
-                if (series.ValueKind == JsonValueKind.Array) k = series.GetArrayLength();
-            }
+            horizon = 1,
+            forecast = Enumerable.Repeat(new[] { 50d }, count).ToArray(),
+            quantiles = (object?)null
+        }), preTrain: 1);
 
-            var forecasts = Enumerable.Repeat(new[] { 1000.0 }, k).ToArray();
-            var quantiles = Enumerable.Range(0, k)
-                .Select(_ => new[] { 900.0, 910.0, 920.0, 930.0, 940.0, 1060.0, 1070.0, 1080.0, 1090.0, 1100.0 })
-                .ToArray();
+        var predictions = model.PredictList(Pings(49, 50, 51)).ToList();
 
-            var content = JsonSerializer.Serialize(new
-            {
-                model = "google/timesfm-2.5-200m-pytorch",
-                horizon = 1,
-                forecast = forecasts,
-                quantiles,
-                backend = "timesfm-2.5"
-            });
-            return new[] { content };
-        });
-
-        if (responder is null)
-        {
-            return;
-        }
-
-        await using var fakeResponder = responder;
-
-        var repo = MakeRabbitRepo(sys);
-        if (repo is null)
-        {
-            return;
-        }
-        try
-        {
-            var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 77, confidence: 0.8, preTrain: 2, modelType: "Change", routingKey: "");
-
-            var window = MakePings(100, 100, 100, 100, 100, 100).ToList();
-            var preds = model.PredictList(window).ToList();
-
-            var postPreTrain = preds.Skip(model.PreTrain).ToList();
-            Assert.Equal(window.Count, preds.Count);
-            Assert.Contains(postPreTrain, p => p.Prediction[0] == 1d);
-            Assert.True(postPreTrain.Last().Prediction[3] > 1.0); // martingale evidence grew
-        }
-        finally
-        {
-            await repo.ShutdownRepo();
-        }
+        Assert.Equal(3, predictions.Count);
+        Assert.All(predictions, prediction => Assert.Equal(0, prediction.Prediction[0]));
     }
 
-    [Fact(DisplayName = "Multi-chunk TimesFM response is aggregated"), Trait("Category", "Integration")]
-    public async Task MultiChunkForecastResponse()
+    [Theory]
+    [InlineData("flat")]
+    [InlineData("per-prefix")]
+    [InlineData("nested")]
+    public void SupportedForecastShapes_AreNormalized(string shape)
     {
-        var sys = LocalRabbitUrl();
-
-        var responder = TryCreateResponder(sys, (payload, replyKey) =>
+        using var model = Model(count =>
         {
-            int k = 1;
-            if (payload.TryGetProperty("messages", out var msgs) && msgs.ValueKind == JsonValueKind.Array)
+            object forecast = shape switch
             {
-                var user = msgs[1].GetProperty("content").GetString() ?? "{}";
-                using var inner = JsonDocument.Parse(user);
-                var series = inner.RootElement.GetProperty("series");
-                if (series.ValueKind == JsonValueKind.Array) k = series.GetArrayLength();
-            }
-
-            var forecasts = Enumerable.Repeat(new[] { 42.0 }, k).ToArray();
-            var quantiles = Enumerable.Range(0, k)
-                .Select(_ => new[]
-                {
-                    new[] { 10.0, 20.0, 30.0, 35.0, 40.0, 45.0, 50.0, 55.0, 60.0, 65.0 },
-                    new[] { 11.0, 21.0, 31.0, 36.0, 41.0, 46.0, 51.0, 56.0, 61.0, 66.0 }
-                })
-                .ToArray();
-
-            var full = JsonSerializer.Serialize(new
-            {
-                model = "google/timesfm-2.5-200m-pytorch",
-                horizon = 1,
-                forecast = forecasts,
-                quantiles,
-                backend = "timesfm-2.5"
-            });
-
-            var mid = full.Length / 2;
-            return new[] { full[..mid], full[mid..] };
+                "flat" => new[] { 100d },
+                "per-prefix" => Enumerable.Repeat(100d, count).ToArray(),
+                _ => Enumerable.Range(0, count).Select(_ => new[] { 100d }).ToArray()
+            };
+            return JsonSerializer.Serialize(new { horizon = 1, forecast, quantiles = (object?)null });
         });
 
-        if (responder is null)
-        {
-            return;
-        }
+        var predictions = model.PredictList(Pings(100, 100, 100, 100)).ToList();
 
-        await using var fakeResponder = responder;
-
-        var repo = MakeRabbitRepo(sys);
-        if (repo is null)
-        {
-            return;
-        }
-        try
-        {
-            var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 5, confidence: 0.8, preTrain: 2, modelType: "Change", routingKey: "");
-
-            var window = MakePings(40, 41, 42, 43, 44).ToList();
-            var preds = model.PredictList(window).ToList();
-
-            Assert.Equal(window.Count, preds.Count);
-            Assert.All(preds, p => Assert.False(double.IsNaN(p.Prediction[1])));
-        }
-        finally
-        {
-            await repo.ShutdownRepo();
-        }
+        Assert.Equal(4, predictions.Count);
+        Assert.All(predictions, prediction => Assert.Equal(0, prediction.Prediction[0]));
     }
 
-    [Fact(DisplayName = "Unknown forecast shape throws"), Trait("Category", "Integration")]
-    public async Task UnknownForecastShapeThrows()
+    [Fact]
+    public void PersistentLargeObservedLatencySpike_RaisesAnAlert()
     {
-        var sys = LocalRabbitUrl();
-
-        var responder = TryCreateResponder(sys, (payload, replyKey) =>
+        var settings = new TimesFmResolvedSettings
         {
-            var content = JsonSerializer.Serialize(new
-            {
-                model = "google/timesfm-2.5-200m-pytorch",
-                horizon = 1,
-                forecast = new { value = 10.0 },
-                quantiles = (object?)null,
-                backend = "timesfm-2.5"
-            });
-            return new[] { content };
-        });
+            RunLength = 2, KOfNK = 2, KOfNN = 2,
+            MinRelShift = 0.1, MinBandAbs = 1, MinBandRel = 0, MadAlpha = 0, LogJson = false
+        };
+        using var model = Model(count => Reply(count), settings: settings);
 
-        if (responder is null)
-        {
-            return;
-        }
+        var predictions = model.PredictList(Pings(100, 100, 100, 140, 145)).ToList();
 
-        await using var fakeResponder = responder;
-
-        var repo = MakeRabbitRepo(sys);
-        if (repo is null)
-        {
-            return;
-        }
-        try
-        {
-            var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 2, confidence: 0.8, preTrain: 1, modelType: "Change", routingKey: "");
-
-            var window = MakePings(1, 2, 3).ToList();
-            Assert.Throws<InvalidOperationException>(() => model.PredictList(window).ToList());
-        }
-        finally
-        {
-            await repo.ShutdownRepo();
-        }
+        Assert.Equal(0, predictions[2].Prediction[0]);
+        Assert.Equal(1, predictions[4].Prediction[0]);
     }
 
-
-    [Fact(DisplayName = "Cooldown decrements per sample"), Trait("Category", "Integration")]
-    public async Task CooldownTicksDownPerSample()
+    [Fact]
+    public void CalmReadings_DoNotRaiseAlerts()
     {
-        var sys = LocalRabbitUrl();
+        using var model = Model(count => Reply(count));
 
-        var responder = TryCreateResponder(sys, (payload, replyKey) =>
-        {
-            int k = 1;
-            if (payload.TryGetProperty("messages", out var msgs) && msgs.ValueKind == JsonValueKind.Array)
-            {
-                var user = msgs[1].GetProperty("content").GetString() ?? "{}";
-                using var inner = JsonDocument.Parse(user);
-                var series = inner.RootElement.GetProperty("series");
-                if (series.ValueKind == JsonValueKind.Array) k = series.GetArrayLength();
-            }
+        var predictions = model.PredictList(Pings(100, 101, 99, 100, 101, 100)).ToList();
 
-            var forecasts = Enumerable.Repeat(new[] { 20.0 }, k).ToArray();
-            var quantiles = Enumerable.Range(0, k)
-                .Select(_ => new[] { 10.0, 11.0, 12.0, 13.0, 14.0, 26.0, 27.0, 28.0, 29.0, 30.0 })
-                .ToArray();
-
-            var content = JsonSerializer.Serialize(new
-            {
-                model = "google/timesfm-2.5-200m-pytorch",
-                horizon = 1,
-                forecast = forecasts,
-                quantiles,
-                backend = "timesfm-2.5"
-            });
-            return new[] { content };
-        });
-
-        if (responder is null)
-        {
-            return;
-        }
-
-        await using var fakeResponder = responder;
-
-        var repo = MakeRabbitRepo(sys);
-        if (repo is null)
-        {
-            return;
-        }
-        try
-        {
-            var log = NullLogger<TimesFmRabbitModel>.Instance;
-            var model = new TimesFmRabbitModel(repo, sys, log, monitorPingInfoID: 101, confidence: 0.8, preTrain: 2, modelType: "Change", routingKey: "");
-
-            var cooldownField = model.GetType().GetField("_cooldown", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            cooldownField!.SetValue(model, 5);
-
-            var inputs = MakePings(20, 21, 22, 23, 24).ToList();
-            _ = model.PredictList(inputs).ToList();
-
-            var cooldownAfter = (int)cooldownField.GetValue(model)!;
-            var expected = Math.Max(0, 5 - (inputs.Count - model.PreTrain));
-            Assert.Equal(expected, cooldownAfter);
-        }
-        finally
-        {
-            await repo.ShutdownRepo();
-        }
+        Assert.All(predictions, prediction => Assert.Equal(0, prediction.Prediction[0]));
     }
 
+    [Fact]
+    public void ShortHistory_UsesTheAvailablePrefixInsteadOfFailing()
+    {
+        using var model = Model(count => Reply(count), preTrain: 20);
 
+        var predictions = model.PredictList(Pings(100, 110)).ToList();
 
+        Assert.Equal(2, predictions.Count);
+        Assert.Equal(0, predictions[0].Prediction[0]);
+    }
 
+    [Fact]
+    public void InvalidForecastShape_IsRejected()
+    {
+        using var model = Model(_ => "{\"horizon\":1,\"forecast\":{\"invalid\":true},\"quantiles\":null}");
+
+        Assert.Throws<InvalidOperationException>(() => model.PredictList(Pings(1, 2, 3)).ToList());
+    }
+
+    [Fact]
+    public void SigmaCooldown_DecrementsAcrossSubsequentEvaluations()
+    {
+        var settings = new TimesFmResolvedSettings
+        {
+            RunLength = 1, KOfNK = 1, KOfNN = 1, SigmaCooldown = 3,
+            MinRelShift = 0.01, MinBandAbs = 1, MinBandRel = 0, MadAlpha = 0, LogJson = false
+        };
+        using var model = Model(count => Reply(count), settings: settings);
+
+        model.PredictList(Pings(100, 100, 150)).ToList();
+        model.PredictList(Pings(100, 100, 100)).ToList();
+
+        Assert.Equal(2, model.CooldownRemaining);
+    }
 }
