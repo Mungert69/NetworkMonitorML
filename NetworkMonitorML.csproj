@@ -9,7 +9,7 @@
     <!-- Containerization -->
     <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
     <PublishProfile>DefaultContainer</PublishProfile>
-    <ContainerImageTag>0.7.3</ContainerImageTag>
+    <ContainerImageTag>0.7.4</ContainerImageTag>
     <ContainerImageFormat>OCI</ContainerImageFormat>
 
     <!-- Framework-dependent container base (console app) -->
