@@ -24,6 +24,51 @@ namespace NetworkMonitor.MonitorML.Tests;
 
 public class PredictionReliabilityTests
 {
+    [Theory]
+    [InlineData(0.2, 20, 4, 6)]
+    [InlineData(0.6, 60, 2, 8)]
+    [InlineData(40, 40, 3, 7)]
+    [InlineData(79, 79, 2, 8)]
+    [InlineData(80, 80, 1, 9)]
+    [InlineData(99, 99, 1, 9)]
+    public void ConfidenceUsesPercentagesAndPreservesLegacyFractions(double input, double percent, int low, int high)
+    {
+        Assert.Equal(percent, ConfidenceSettings.ToPercent(input));
+        Assert.Equal((low, high), TimesFmRabbitModel.PickQuantileIndices(input));
+    }
+
+    [Fact]
+    public async Task CachedHostLoadsSavedUpdatesLargerWindowsAndRemovedOverrides()
+    {
+        var services = new ServiceCollection();
+        var name = Guid.NewGuid().ToString();
+        services.AddDbContext<MonitorContext>(options => options.UseInMemoryDatabase(name, db => db.EnableNullChecks(false)));
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+        var config = new MonitorModelConfig { PredictWindow = 120, ChangeConfidence = 60 };
+        var ip = new MonitorIP { ID = 1, ModelConfig = config };
+        db.MonitorIPs.Add(ip);
+        db.MonitorPingInfos.Add(Host(1, 300));
+        await db.SaveChangesAsync();
+        var repo = new MonitorMLDataRepo(NullLogger<MonitorMLDataRepo>.Instance, provider.GetRequiredService<IServiceScopeFactory>());
+        var original = Assert.Single(await repo.GetLatestMonitorPingInfos(120));
+        Assert.Equal(120, original.PingInfos.Count);
+        config.PredictWindow = 300;
+        config.ChangeConfidence = 40;
+        await db.SaveChangesAsync();
+        var refreshed = Assert.Single(await repo.GetLatestMonitorPingInfos(120));
+        Assert.Equal(300, refreshed.PingInfos.Count);
+        Assert.Equal(40d, refreshed.ModelConfig!.ChangeConfidence);
+        config.ChangeConfidence = 20;
+        await db.SaveChangesAsync();
+        Assert.Equal(20d, (await repo.GetMonitorPingInfo(1, 120, 0))!.ModelConfig!.ChangeConfidence);
+        ip.ModelConfig = null;
+        ip.MonitorModelConfigId = null;
+        await db.SaveChangesAsync();
+        Assert.Null(Assert.Single(await repo.GetLatestMonitorPingInfos(120)).ModelConfig);
+    }
+
     [Fact]
     public void RelativeShiftUsesObservedLatencyRatherThanForecast()
     {

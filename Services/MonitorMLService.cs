@@ -259,6 +259,14 @@ public class MonitorMLService : IMonitorMLService
             }
         }
 
+        primaryResolved.ChangeConfidence = ConfidenceSettings.ToPercent(primaryResolved.ChangeConfidence);
+        primaryResolved.SpikeConfidence = ConfidenceSettings.ToPercent(primaryResolved.SpikeConfidence);
+        if (secondaryResolved != null)
+        {
+            secondaryResolved.ChangeConfidence = ConfidenceSettings.ToPercent(secondaryResolved.ChangeConfidence);
+            secondaryResolved.SpikeConfidence = ConfidenceSettings.ToPercent(secondaryResolved.SpikeConfidence);
+        }
+
         return new ResolvedHostParameters
         {
             Primary = primaryResolved,

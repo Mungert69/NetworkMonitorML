@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using Moq;
 using NetworkMonitor.ML.Model;
 using NetworkMonitor.Objects;
@@ -26,7 +27,9 @@ public sealed class TimesFmRabbitModelTests
     private static TimesFmRabbitModel Model(
         Func<int, string> reply,
         int preTrain = 2,
-        TimesFmResolvedSettings? settings = null)
+        TimesFmResolvedSettings? settings = null,
+        ILogger<TimesFmRabbitModel>? logger = null,
+        double confidence = 80)
     {
         Task<string> Respond(string request, CancellationToken _)
         {
@@ -39,9 +42,9 @@ public sealed class TimesFmRabbitModelTests
         return new TimesFmRabbitModel(
             new Mock<IRabbitRepo>().Object,
             new SystemUrl(),
-            NullLogger<TimesFmRabbitModel>.Instance,
+            logger ?? NullLogger<TimesFmRabbitModel>.Instance,
             monitorPingInfoID: 1,
-            confidence: 0.8,
+            confidence: confidence,
             preTrain: preTrain,
             modelType: "Change",
             routingKey: "",
@@ -58,6 +61,43 @@ public sealed class TimesFmRabbitModelTests
             forecast = Enumerable.Range(0, count).Select(_ => new[] { forecast }).ToArray(),
             quantiles = Enumerable.Range(0, count).Select(_ => quantiles).ToArray()
         });
+    }
+
+    [Fact]
+    public void PercentageAndLegacyConfidenceAgreeAndNarrowerBandsChangeDetection()
+    {
+        var settings = new TimesFmResolvedSettings
+        { RunLength = 1, KOfNK = 1, KOfNN = 1, MadAlpha = 0, MinBandAbs = 0, MinBandRel = 0, MinRelShift = 0.01 };
+        using var narrow = Model(count => Reply(count), settings: settings, confidence: 60);
+        using var legacy = Model(count => Reply(count), settings: settings, confidence: 0.6);
+        using var wide = Model(count => Reply(count), settings: settings, confidence: 80);
+        var observations = Pings(100, 100, 111);
+        var expected = narrow.PredictList(observations).ToList();
+        Assert.Equal(1, expected.Last().Prediction[0]);
+        Assert.Equal(expected.SelectMany(p => p.Prediction), legacy.PredictList(observations).SelectMany(p => p.Prediction));
+        Assert.Equal(0, wide.PredictList(observations).Last().Prediction[0]);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 1)]
+    [InlineData(3, 3)]
+    [InlineData(20, 6)]
+    public void SampleRowsLimitsDiagnosticOutputWithoutChangingDetections(int requested, int expected)
+    {
+        var logger = new Mock<ILogger<TimesFmRabbitModel>>();
+        logger.Setup(log => log.IsEnabled(LogLevel.Information)).Returns(true);
+        using var model = Model(count => Reply(count), settings: new TimesFmResolvedSettings
+        { SampleRows = requested }, logger: logger.Object);
+        using var reference = Model(count => Reply(count));
+        var inputs = Pings(100, 100, 100, 100, 140, 145, 150, 100);
+        Assert.Equal(reference.PredictList(inputs).SelectMany(p => p.Prediction),
+            model.PredictList(inputs).SelectMany(p => p.Prediction));
+        var samples = logger.Invocations.Where(call => call.Method.Name == "Log" &&
+            (call.Arguments[2]?.ToString() ?? "").StartsWith("timesfm sample")).ToList();
+        Assert.Equal(expected, samples.Count);
+        Assert.Single(logger.Invocations, call => call.Method.Name == "Log" &&
+            (call.Arguments[2]?.ToString() ?? "").StartsWith("timesfm summary"));
     }
 
     [Fact]

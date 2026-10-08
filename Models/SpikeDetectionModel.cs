@@ -52,7 +52,7 @@ namespace NetworkMonitor.ML.Model
             {
                 _modelPath = modelPath;
                 _mlContext = mLContext;
-                _confidence = confidence;
+                _confidence = ConfidenceSettings.ToPercent(confidence);
             }
 
             public void Train(List<LocalPingInfo> localPingInfos)
@@ -83,7 +83,7 @@ namespace NetworkMonitor.ML.Model
             {
                 _modelPath = modelPath;
                 _mlContext = mLContext;
-                _confidence = confidence;
+                _confidence = ConfidenceSettings.ToPercent(confidence);
                 _preTrain = preTrain;
             }
 

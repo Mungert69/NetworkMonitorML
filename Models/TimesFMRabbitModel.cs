@@ -254,7 +254,12 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
 
         int near = 0, outsideCnt = 0, flaggedCnt = 0;
         double maxResid = 0, minMargin = double.PositiveInfinity;
-        var samples = new List<string>(Math.Max(0, _sampleRows));
+        int scoredCount = n - effectivePreTrain;
+        int sampleCount = Math.Min(_sampleRows, scoredCount);
+        var samples = new List<string>(sampleCount);
+        var sampleIndices = sampleCount == 1 ? new HashSet<int> { scoredCount - 1 } :
+            Enumerable.Range(0, sampleCount).Select(index =>
+                (int)((long)index * (scoredCount - 1) / Math.Max(1, sampleCount - 1))).ToHashSet();
 
         int runLen = 0;
         var kOfNQueue = new Queue<bool>(_kOfNN);
@@ -391,8 +396,8 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
             if (!outside && double.IsFinite(fracToEdge) && fracToEdge <= _nearMissFrac) near++;
             if (changeFlag) flaggedCnt++;
 
-            // sample: first 4 and last 2 rows
-            if (samples.Count < 4 || j >= (n - effectivePreTrain) - 2)
+            // Keep up to SampleRows across the batch, including its ends.
+            if (_log.IsEnabled(LogLevel.Information) && sampleIndices.Contains(j))
             {
                 if (_logJson)
                 {
@@ -571,9 +576,11 @@ public sealed class TimesFmRabbitModel : IMLModel, IDisposable
         return primary ?? throw new InvalidOperationException("TimesFM: no primary payload found");
     }
 
-    private static (int loIdx, int hiIdx) PickQuantileIndices(double confidence)
+    internal static (int loIdx, int hiIdx) PickQuantileIndices(double confidence)
     {
-        // tens quantiles on indices 1..9 (index 0 == mean)
+        // Available decile quantiles support central intervals up to 80%.
+        // Do not extrapolate unsupported 90%/99% tails. Report the effective band.
+        confidence = ConfidenceSettings.ToPercent(confidence) / 100.0;
         if (confidence >= 0.80) return (1, 9); // q10..q90
         if (confidence >= 0.60) return (2, 8); // q20..q80
         if (confidence >= 0.40) return (3, 7); // q30..q70

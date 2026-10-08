@@ -49,11 +49,44 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             _isDataFull = true;
         }
 
-        return _cachedMonitorPingInfos
-               .Where(mpi => mpi.DataSetID == 0)
-               .ToList();
+        var latest = _cachedMonitorPingInfos.Where(mpi => mpi.DataSetID == 0).ToList();
+        var previousWindows = latest.ToDictionary(host => host.MonitorIPID,
+            host => Math.Max(windowSize, host.ModelConfig?.PredictWindow ?? 0));
+        await RefreshModelConfigs(latest);
+        // A larger saved window may require historical points already trimmed
+        // out of memory; load those before the next evaluation.
+        for (int i = 0; i < latest.Count; i++)
+        {
+            var host = latest[i];
+            int required = Math.Max(windowSize, host.ModelConfig?.PredictWindow ?? 0);
+            if (required > previousWindows[host.MonitorIPID] && host.PingInfos.Count(IsUsable) < required)
+            {
+                var refreshed = await GetDBMonitorPingInfo(host.MonitorIPID, required, host.DataSetID);
+                if (refreshed != null)
+                {
+                    _cachedMonitorPingInfos.Remove(host);
+                    _cachedMonitorPingInfos.Add(refreshed);
+                    latest[i] = refreshed;
+                }
+            }
+        }
+        return latest;
     }
 
+
+    private async Task RefreshModelConfigs(List<MonitorPingInfo> hosts)
+    {
+        if (hosts.Count == 0) return;
+        using var scope = _scopeFactory.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<MonitorContext>();
+        var ids = hosts.Select(host => host.MonitorIPID).Distinct().ToList();
+        var configs = await context.MonitorIPs.AsNoTracking()
+            .Where(ip => ids.Contains(ip.ID))
+            .Select(ip => new { ip.ID, ip.ModelConfig })
+            .ToDictionaryAsync(ip => ip.ID, ip => ip.ModelConfig);
+        foreach (var host in hosts)
+            host.ModelConfig = configs.GetValueOrDefault(host.MonitorIPID);
+    }
 
     public async Task<List<MonitorPingInfo>> GetDBLatestMonitorPingInfos(int windowSize)
     {
@@ -87,6 +120,8 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
     {
         var cachedResult = _cachedMonitorPingInfos.FirstOrDefault(mpi =>
                             mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
+        if (cachedResult != null)
+            await RefreshModelConfigs(new List<MonitorPingInfo> { cachedResult });
         int required = Math.Max(windowSize, cachedResult?.ModelConfig?.PredictWindow ?? 0);
         if (cachedResult != null && required > 0 && cachedResult.PingInfos.Count(IsUsable) >= required)
         {
@@ -181,7 +216,7 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                             mpi.MonitorIPID == monitorIPID && mpi.DataSetID == dataSetID);
         if (cachedResult != null)
         {
-            // Adjust if windowSize filtering is needed
+            await RefreshModelConfigs(new List<MonitorPingInfo> { cachedResult });
             return cachedResult;
         }
 
