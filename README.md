@@ -73,8 +73,8 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
    streams back one-step forecasts (and quantile bands) for each prefix.
 5. **Scoring** – We align each forecast with the actual measurement, compute residuals,
    band breaches, run-length/k-of-n persistence, relative shift vs baseline, martingale
-   p-values, and cooldown behaviour. Diagnostics (`timesfm sample …`) log the first four
-   and last two samples for visibility.
+   p-values, and cooldown behaviour. Diagnostics (`timesfm sample …`) log up to
+   `SampleRows` observations spread across the scored batch.
 6. **Publish alert** – Results are written back to the database and published as
    `PredictStatusAlert` messages (`alertUpdatePredictStatusAlerts`) so the alert service can notify users. The service only raises the `AlertFlag` when both change and spike detectors report an issue for the same window; single-mode detections are logged but suppressed.
 
@@ -101,7 +101,7 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
 - Alert messages include both stages (`Primary (MicrosoftMLTS)` and `Secondary (TimesFM)`) so on-call engineers can see whether the verifier confirmed or vetoed the incident.
 
 ### Observability and alerting
-- Informational logs capture batch summaries (`timesfm summary …`) alongside structured JSON samples (first four and last two rows) so on-call engineers can see residuals, gates, and martingale values without replaying the run.
+- Informational logs capture batch summaries (`timesfm summary …`) alongside structured JSON samples (up to `SampleRows`, spread across the batch) so on-call engineers can see residuals, gates, and martingale values without replaying the run.
 - `MonitorMLService` rolls those predictions into `DetectionResult` objects, counting detections, tracking first-occurrence timestamps, averaging residuals for flagged points, and recording minimum p-values / maximum martingale values. Windows downshift after multiple quiet runs and spring back to the configured maximum as soon as martingale/alerts heat up.
 - Updated results persist to the `PredictStatus` records and publish through Rabbit so downstream alerting services can fan out notifications.
 - Alerts require both change and spike detections before the `AlertFlag` is set, which keeps noise from single-mode detections out of downstream paging.
@@ -112,11 +112,11 @@ curl -X POST http://localhost:8080/mode -H 'Content-Type: application/json' \
 
 ### Shared parameters
 
-- **ChangeConfidence** – probability threshold for change-point detection. Lower values make the change model fire on smaller shifts; higher values demand stronger evidence.
-- **SpikeConfidence** – confidence level for spike detection. Lowering it increases sensitivity to one-off spikes; raising it suppresses noise-induced alerts.
+- **ChangeConfidence** – confidence percentage for change detection. Enter `60` for 60%; historical fractions below 1 are normalised. ML.NET uses the percentage directly. TimesFM selects 20%, 40%, 60% or 80% central quantile bands, rounding down between bands and capping above 80%; below 20% it uses the median band with noise/minimum-width inflation.
+- **SpikeConfidence** – confidence percentage for spike detection, with the same backend-specific interpretation as ChangeConfidence.
 - **ChangePreTrain** – number of warm-up samples consumed before the change detector emits results. Larger buffers stabilise the baseline but delay initial visibility.
 - **SpikePreTrain** – warm-up window for spike detection. More history reduces noise but slows reaction time.
-- **PredictWindow** – maximum number of samples fetched for each run. Bigger windows retain more context; smaller windows reduce compute.
+- **PredictWindow** – target usable historical observations for evaluation, with bounded timeout headroom. It is not a future forecast horizon.
 - **SpikeDetectionThreshold** – post-processing guard that requires at least N spike detections before the service marks a spike incident.
 
 ### TimesFM-only settings
@@ -134,19 +134,29 @@ TimesFM now lets you tailor change and spike behaviour separately. Each profile 
 
 Configure shared defaults under `TimesFmSettings`, and override per mode with `TimesFmChangeSettings` and `TimesFmSpikeSettings` inside each model entry.
 
-Because `MonitorMLService` replays settings on every reuse, you can adjust the config and restart the service to adopt new thresholds without code changes.
-
-### Testing touchpoints
-- Integration tests spin up an in-process Rabbit responder to exercise happy paths, quantile fallbacks, streaming multi-chunk replies, cooldown behavior, and failure cases (unknown forecast shapes).
-- Run them locally with `dotnet test`; the suite lives under `Tests/TimesFmRabbitModelTests.cs`.
+Host configuration saved in the database is refreshed before prediction runs, including removal of overrides and expansion of historical windows. Already-sent alerts reuse latched results until reset. Deployment-level configuration is loaded at startup; restart the service after changing those defaults.
 
 ## Testing
-Integration tests (`Tests/TimesFmRabbitModelTests.cs`) spin up a fake responder to
-simulate TimesFM responses:
+
+The deterministic integration suite runs without TimesFM, RabbitMQ, an external database, credentials or a simulator endpoint:
+
 ```bash
-dotnet test
+dotnet test NetworkMonitorML.csproj -p:IsTestProject=true --filter "Category=FixedDataIntegration"
 ```
-These require a local RabbitMQ instance and read configuration from `Tests/appsettings.json`.
+
+`Tests/FixedDataPredictionIntegrationTests.cs` loads fixed readings and expected outcomes from `Tests/Fixtures/prediction-scenarios.json`. Timestamps are anchored at 2026-01-01 UTC. It runs the production service, real ML.NET detectors, real TimesFM parsing/anomaly adapter, history/cache logic and repository. EF Core uses an isolated in-memory store; outgoing broker calls are captured and TimesFM's final forecast/quantile content is supplied by a deterministic responder.
+
+Scenarios cover healthy noise, isolated spikes, sustained changes, run-length/K-of-N/count/magnitude/band boundaries, detector-specific overrides, differing context lengths, confidence bands, missing quantiles, timeout alignment, real ML.NET patterns, and real primary/hybrid confirmation and rejection. Lifecycle tests verify saved configuration changes, removal of overrides, historical backfill, first-time status creation, alert latch/reset/recovery, malformed/failed/cancelled forecasts, and suppression of publications when persistence fails. They assert returned detection results, separately reloaded database state, published status payloads and exact historical prefixes sent for forecasting.
+
+These tests do not validate real model forecast accuracy, RabbitMQ transport/stream framing, SQL provider constraints, notification delivery or model runtime performance. An actual TimesFM model, broker and SQL provider require separate environment integration tests.
+
+Run the full suite with:
+
+```bash
+dotnet test NetworkMonitorML.csproj -p:IsTestProject=true
+```
+
+`Tests/TimesFmRabbitModelTests.cs` contains additional adapter regressions with injected responses, including quantile shapes and cooldown. The Rabbit responder helpers in `Tests/TestHelpers.cs` are available for future transport tests; the current suites do not use them or require a local broker.
 
 ## Deployment
 - Build the container image with `./build-run` or via CI.

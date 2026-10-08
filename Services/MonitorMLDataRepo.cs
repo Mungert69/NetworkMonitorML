@@ -406,19 +406,22 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
             if (dbPredictStatus == null)
             {
                 // Create a fresh instance to guarantee a new auto-increment PK.
-                var ps = new PredictStatus(predictStatus, zeroIds: true);
-                ps.MonitorPingInfoID = monitorPingInfoID;
-                monitorContext.PredictStatuses.Add(ps);
+                dbPredictStatus = new PredictStatus(predictStatus, zeroIds: true);
+                dbPredictStatus.MonitorPingInfoID = monitorPingInfoID;
+                monitorContext.PredictStatuses.Add(dbPredictStatus);
             }
             else
             {
-                // Update existing (minimal fields only)
+                // Keep notification ownership (AlertSent) with the alert service;
+                // save the detector results and current decision on every run.
                 dbPredictStatus.ChangeDetectionResult = predictStatus.ChangeDetectionResult;
                 dbPredictStatus.SpikeDetectionResult = predictStatus.SpikeDetectionResult;
                 dbPredictStatus.EventTime = predictStatus.EventTime;
                 dbPredictStatus.Message = predictStatus.Message;
             }
 
+            dbPredictStatus.AlertFlag = predictStatus.AlertFlag;
+            dbPredictStatus.DownCount = predictStatus.DownCount;
             await monitorContext.SaveChangesAsync();
             UpdateCachedPredictStatus(monitorIPID, predictStatus);
 
@@ -489,7 +492,11 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                 return result;
             }
 
-            if (alertFlag != null) predictStatus.AlertFlag = alertFlag.Value;
+            if (alertFlag != null)
+            {
+                predictStatus.AlertFlag = alertFlag.Value;
+                predictStatus.DownCount = alertFlag.Value ? 1 : 0;
+            }
             if (sentFlag != null) predictStatus.AlertSent = sentFlag.Value;
 
             // Also update in cache if available
@@ -497,7 +504,11 @@ public class MonitorMLDataRepo : IMonitorMLDataRepo
                 .FirstOrDefault(mpi => mpi.MonitorIPID == monitorIPID && mpi.DataSetID == 0);
             if (cachedMonitorPingInfo?.PredictStatus != null)
             {
-                if (alertFlag != null) cachedMonitorPingInfo.PredictStatus.AlertFlag = alertFlag.Value;
+                if (alertFlag != null)
+                {
+                    cachedMonitorPingInfo.PredictStatus.AlertFlag = alertFlag.Value;
+                    cachedMonitorPingInfo.PredictStatus.DownCount = alertFlag.Value ? 1 : 0;
+                }
                 if (sentFlag != null) cachedMonitorPingInfo.PredictStatus.AlertSent = sentFlag.Value;
             }
 

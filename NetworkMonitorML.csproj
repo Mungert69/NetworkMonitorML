@@ -67,6 +67,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Tests/Fixtures/*.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
