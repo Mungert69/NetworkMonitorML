@@ -1048,8 +1048,9 @@ public class MonitorMLService : IMonitorMLService
     {
         if (string.IsNullOrWhiteSpace(endpointType))
         {
-            _logger.LogWarning("Endpoint type is null or empty - excluding from prediction analysis.");
-            return false;
+            // No endpoint type recorded - we cannot determine it is unsuitable, so allow analysis.
+            _logger.LogDebug("Endpoint type is null or empty - including in prediction analysis.");
+            return true;
         }
 
         try
@@ -1059,8 +1060,9 @@ public class MonitorMLService : IMonitorMLService
         }
         catch (ArgumentException)
         {
-            _logger.LogWarning("Unknown endpoint type '{EndpointType}' - excluding from prediction analysis.", endpointType);
-            return false;
+            // Unknown endpoint type - we cannot determine it is unsuitable, so allow analysis.
+            _logger.LogDebug("Unknown endpoint type '{EndpointType}' - including in prediction analysis.", endpointType);
+            return true;
         }
     }
     public async Task<List<LocalPingInfo>> TrainForHost(int monitorIPID)
