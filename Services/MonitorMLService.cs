@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Microsoft.Extensions.Logging;
 using NetworkMonitor.Objects;
+using NetworkMonitor.Objects.Factory;
 using NetworkMonitor.Utils.Helpers;
 using System.Threading.Tasks;
 using NetworkMonitor.Objects.ServiceMessage;
@@ -572,6 +573,17 @@ public class MonitorMLService : IMonitorMLService
         if (monitorPingInfo != null)
         {
             result.Success = true;
+
+            // Skip prediction analysis for endpoint types that do not produce a meaningful
+            // response-time (RoundTripTime) measurement. Only duration-based endpoint types
+            // (icmp, http, dns, smtp, etc.) are suitable for TimesFM change/spike detection.
+            if (!IsEndpointSuitableForPrediction(monitorPingInfo.EndPointType))
+            {
+                result.Message = $"Skipped: endpoint type '{monitorPingInfo.EndPointType}' is not suitable for prediction analysis.";
+                _logger.LogInformation("{Message}", result.Message);
+                return result;
+            }
+
             int monitorIPID = monitorPingInfo.MonitorIPID;
             int dataSetID = monitorPingInfo.DataSetID;
             var resolvedBundle = ResolveParameters(monitorPingInfo.ModelConfig);
@@ -1030,6 +1042,26 @@ public class MonitorMLService : IMonitorMLService
                 Message = source.Result.Message
             }
         };
+    }
+
+    private bool IsEndpointSuitableForPrediction(string? endpointType)
+    {
+        if (string.IsNullOrWhiteSpace(endpointType))
+        {
+            _logger.LogWarning("Endpoint type is null or empty - excluding from prediction analysis.");
+            return false;
+        }
+
+        try
+        {
+            var type = EndPointTypeFactory.GetEndpointType(endpointType);
+            return type.IsSuitableForPrediction;
+        }
+        catch (ArgumentException)
+        {
+            _logger.LogWarning("Unknown endpoint type '{EndpointType}' - excluding from prediction analysis.", endpointType);
+            return false;
+        }
     }
     public async Task<List<LocalPingInfo>> TrainForHost(int monitorIPID)
     {
