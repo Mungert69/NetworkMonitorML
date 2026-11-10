@@ -8,7 +8,6 @@
 
     <!-- Containerization -->
     <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
-    <PublishProfile>DefaultContainer</PublishProfile>
     <ContainerImageTag>0.8.0</ContainerImageTag>
     <ContainerImageFormat>OCI</ContainerImageFormat>
 
