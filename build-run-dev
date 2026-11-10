@@ -1,27 +1,5 @@
 #!/bin/sh
 set -eu
 
-CONFIG="Release-Dev"
-
-TAG="$(sed -n 's/.*<ContainerImageTag>\(.*\)<\/ContainerImageTag>.*/\1/p' NetworkMonitorML.csproj | head -n1)"
-[ -n "${TAG:-}" ] || TAG="latest"
-
-REPO="$(
-  awk -v cfg="$CONFIG" '
-    /<PropertyGroup/ && /Condition=/ {
-      inpg = ($0 ~ ("\\x27\\$\\(Configuration\\)\\x27[[:space:]]*==[[:space:]]*\\x27" cfg "\\x27"))
-      next
-    }
-    inpg && /<ContainerRepository>/{line=$0;sub(/.*<ContainerRepository>/,"",line);sub(/<\/ContainerRepository>.*/,"",line);print line;exit}
-    inpg && /<\/PropertyGroup>/{inpg=0}
-  ' NetworkMonitorML.csproj
-)"
-[ -n "${REPO:-}" ] || REPO="mungert/networkmonitorpredict-dev"
-
-echo "Publishing container: $REPO:$TAG ($CONFIG, linux-x64)"
-
-dotnet test --nologo || true
-
-dotnet publish NetworkMonitorML.csproj \
-  -c "$CONFIG" \
-  -t:PublishContainer
+# Use the shared Debian-based container build for every entry point.
+exec ./build-run-dev-layered
