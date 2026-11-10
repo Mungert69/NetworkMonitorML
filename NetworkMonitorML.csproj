@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <DefaultItemExcludes>$(DefaultItemExcludes);docker-context/**</DefaultItemExcludes>
     <TargetLatestRuntimePatch>true</TargetLatestRuntimePatch>
     <Nullable>enable</Nullable>
@@ -9,7 +9,7 @@
     <!-- Containerization -->
     <EnableSdkContainerSupport>true</EnableSdkContainerSupport>
     <PublishProfile>DefaultContainer</PublishProfile>
-    <ContainerImageTag>0.7.6</ContainerImageTag>
+    <ContainerImageTag>0.8.0</ContainerImageTag>
     <ContainerImageFormat>OCI</ContainerImageFormat>
 
     <!-- Framework-dependent container base (console app) -->
